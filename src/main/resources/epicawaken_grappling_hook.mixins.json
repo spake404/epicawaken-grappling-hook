@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.com.epicawaken_grappling_hook.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "epicawaken_grappling_hook.refmap.json",
+  "mixins": [
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "item.epicawaken_grappling_hook.grappling_hook": "钩锁",
+  "itemGroup.epicawaken_grappling_hook.main": "钩锁",
+  "key.categories.epicawaken_grappling_hook": "钩锁",
+  "key.epicawaken_grappling_hook.use_grappling_hook": "使用钩锁",
+  "config.epicawaken_grappling_hook.grapplingHookCooldown": "钩锁冷却",
+  "config.epicawaken_grappling_hook.hookPullAnimationSpeed": "拉钩动作速度",
+  "config.epicawaken_grappling_hook.projectileInaccuracy": "投射物散布",
+  "config.epicawaken_grappling_hook.maxLifeTicks": "钩锁最大存在时间",
+  "config.epicawaken_grappling_hook.entityPullStrengthMultiplier": "实体拉拽力度",
+  "config.epicawaken_grappling_hook.entityPullUpBoost": "实体上抬力度",
+  "config.epicawaken_grappling_hook.respectKnockbackResistance": "尊重击退抗性",
+  "config.epicawaken_grappling_hook.groundPullStrength": "钩地拉拽力度",
+  "config.epicawaken_grappling_hook.airPullStrength": "钩空拉拽力度"
+}
