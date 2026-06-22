@@ -7,6 +7,7 @@
   "mixins": [
   ],
   "client": [
+    "client.TimerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

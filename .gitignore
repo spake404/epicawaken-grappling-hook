@@ -1,0 +1,11 @@
+﻿.gradle/
+build/
+run/
+run-data/
+.idea/
+.aiassistant/
+tmp_*/
+*.log
+*.class
+*.jar
+blockbench_screen.png

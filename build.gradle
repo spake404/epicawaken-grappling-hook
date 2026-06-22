@@ -178,6 +178,7 @@ dependencies {
     compileOnly fg.deobf("curse.maven:sophisticated-backpacks-422301:8272350")
     compileOnly fg.deobf("curse.maven:sophisticated-core-618298:8272318")
     implementation fg.deobf("curse.maven:epicfightcurioscompat-1389133:7866027")
+    implementation fg.deobf("curse.maven:free-cam-557076:4643128")
 
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html

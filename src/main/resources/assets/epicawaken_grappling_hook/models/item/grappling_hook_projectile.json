@@ -1,0 +1,16 @@
+{
+  "loader": "forge:obj",
+  "model": "epicawaken_grappling_hook:models/item/obj/grappling_hook_projectile.obj",
+  "flip_v": true,
+  "textures": {
+    "texture0": "epicawaken_grappling_hook:item/grappling_hook_projectile",
+    "particle": "epicawaken_grappling_hook:item/grappling_hook_projectile"
+  },
+  "display": {
+    "epicawaken_grappling_hook:worn": {
+      "rotation": [0, 180, 0],
+      "translation": [0, 0, 0],
+      "scale": [1, 1, 1]
+    }
+  }
+}

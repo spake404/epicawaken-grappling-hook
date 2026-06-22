@@ -19,9 +19,11 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
+import org.com.epicawaken_grappling_hook.client.GrapplingHookLineDebugControls;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
 import org.jetbrains.annotations.NotNull;
+import org.joml.Matrix4f;
 import yesman.epicfight.gameasset.Armatures;
 import yesman.epicfight.model.armature.HumanoidArmature;
 import yesman.epicfight.world.capabilities.EpicFightCapabilities;
@@ -30,6 +32,13 @@ import yesman.epicfight.world.capabilities.entitypatch.player.PlayerPatch;
 public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     private static final ResourceLocation HOOK_TEXTURE = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "textures/item/grappling_hook.png");
     public static final ResourceLocation PROJECTILE_MODEL = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "item/grappling_hook_projectile");
+    private static final float PROJECTILE_MODEL_SCALE = 0.85F;
+    private static final float PROJECTILE_MODEL_CENTER_X = 0.0F;
+    private static final float PROJECTILE_MODEL_CENTER_Y = 1.9877725F;
+    private static final float PROJECTILE_MODEL_CENTER_Z = 0.34375F;
+    private static final int LEASH_RENDER_STEPS = 24;
+    private static final float LEASH_WIDTH = 0.08F;
+    private static final float LEASH_SAG = 0.18F;
 
     public GrapplingHookRenderer(EntityRendererProvider.Context context) {
         super(context);
@@ -45,7 +54,7 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
         Entity entity = grapplingHook.getOwner();
         if (entity instanceof Player player) {
             poseStack.pushPose();
-            this.renderConnectionLine(grapplingHook, player, partialTicks, poseStack, bufferSource);
+            this.renderConnectionLine(grapplingHook, player, partialTicks, poseStack, bufferSource, packedLight);
             poseStack.popPose();
             this.renderHook(grapplingHook, partialTicks, poseStack, bufferSource, packedLight);
             super.render(grapplingHook, entityYaw, partialTicks, poseStack, bufferSource, packedLight);
@@ -56,7 +65,8 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
         poseStack.pushPose();
         poseStack.mulPose(Axis.YP.rotationDegrees(Mth.lerp(partialTicks, grapplingHook.yRotO, grapplingHook.getYRot()) - 90.0F));
         poseStack.mulPose(Axis.ZP.rotationDegrees(Mth.lerp(partialTicks, grapplingHook.xRotO, grapplingHook.getXRot())));
-        poseStack.scale(0.85F, 0.85F, 0.85F);
+        poseStack.scale(PROJECTILE_MODEL_SCALE, PROJECTILE_MODEL_SCALE, PROJECTILE_MODEL_SCALE);
+        poseStack.translate(-PROJECTILE_MODEL_CENTER_X, -PROJECTILE_MODEL_CENTER_Y, -PROJECTILE_MODEL_CENTER_Z);
         Minecraft minecraft = Minecraft.getInstance();
         BakedModel model = minecraft.getModelManager().getModel(PROJECTILE_MODEL);
         minecraft.getItemRenderer().render(
@@ -71,7 +81,7 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
         poseStack.popPose();
     }
 
-    private void renderConnectionLine(GrapplingHook grapplingHook, Player player, float partialTicks, PoseStack poseStack, MultiBufferSource bufferSource) {
+    private void renderConnectionLine(GrapplingHook grapplingHook, Player player, float partialTicks, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
         PlayerPatch<?> playerPatch = EpicFightCapabilities.getEntityPatch(player, PlayerPatch.class);
         if (playerPatch == null) {
             return;
@@ -83,16 +93,60 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
                 Mth.lerp(partialTicks, grapplingHook.yo, grapplingHook.getY()),
                 Mth.lerp(partialTicks, grapplingHook.zo, grapplingHook.getZ()));
         Vec3 vector = leftHandPos.subtract(hookPos);
-        Vec3 vectorNormal = vector.normalize();
-        VertexConsumer lineConsumer = bufferSource.getBuffer(RenderType.lines());
-        PoseStack.Pose pose = poseStack.last();
-        lineConsumer.vertex(pose.pose(), 0.0F, 0.0F, 0.0F)
-                .color(0, 1, 1, 255)
-                .normal(pose.normal(), (float) vectorNormal.x, (float) vectorNormal.y, (float) vectorNormal.z)
+        float x = (float) vector.x;
+        float y = (float) vector.y;
+        float z = (float) vector.z;
+        float horizontalLengthSqr = x * x + z * z;
+        float sideX;
+        float sideZ;
+        if (horizontalLengthSqr < 1.0E-6F) {
+            sideX = LEASH_WIDTH * 0.5F;
+            sideZ = 0.0F;
+        } else {
+            float invHorizontalLength = Mth.invSqrt(horizontalLengthSqr) * LEASH_WIDTH * 0.5F;
+            sideX = z * invHorizontalLength;
+            sideZ = -x * invHorizontalLength;
+        }
+
+        VertexConsumer lineConsumer = bufferSource.getBuffer(RenderType.leash());
+        Matrix4f matrix = poseStack.last().pose();
+        for (int step = 0; step <= LEASH_RENDER_STEPS; step++) {
+            addLeashVertexPair(lineConsumer, matrix, x, y, z, sideX, sideZ, packedLight, step, false);
+        }
+        for (int step = LEASH_RENDER_STEPS; step >= 0; step--) {
+            addLeashVertexPair(lineConsumer, matrix, x, y, z, sideX, sideZ, packedLight, step, true);
+        }
+    }
+
+    private static void addLeashVertexPair(
+            VertexConsumer consumer,
+            Matrix4f matrix,
+            float x,
+            float y,
+            float z,
+            float sideX,
+            float sideZ,
+            int packedLight,
+            int step,
+            boolean reverse) {
+        float t = (float) step / LEASH_RENDER_STEPS;
+        float shade = (step % 2 == (reverse ? 1 : 0)) ? 0.7F : 1.0F;
+        float px = x * t;
+        float py = y * t - LEASH_SAG * t * (1.0F - t);
+        float pz = z * t;
+        float firstYOffset = reverse ? 0.0F : LEASH_WIDTH;
+        float secondYOffset = LEASH_WIDTH - firstYOffset;
+        float red = GrapplingHookLineDebugControls.red(step) * shade;
+        float green = GrapplingHookLineDebugControls.green(step) * shade;
+        float blue = GrapplingHookLineDebugControls.blue(step) * shade;
+
+        consumer.vertex(matrix, px + sideX, py + firstYOffset, pz + sideZ)
+                .color(red, green, blue, 1.0F)
+                .uv2(packedLight)
                 .endVertex();
-        lineConsumer.vertex(pose.pose(), (float) vector.x, (float) vector.y, (float) vector.z)
-                .color(0, 1, 1, 255)
-                .normal(pose.normal(), (float) vectorNormal.x, (float) vectorNormal.y, (float) vectorNormal.z)
+        consumer.vertex(matrix, px - sideX, py + secondYOffset, pz - sideZ)
+                .color(red, green, blue, 1.0F)
+                .uv2(packedLight)
                 .endVertex();
     }
 

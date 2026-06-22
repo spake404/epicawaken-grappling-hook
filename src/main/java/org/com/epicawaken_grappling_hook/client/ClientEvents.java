@@ -23,6 +23,7 @@ import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHookRenderer;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 import org.lwjgl.glfw.GLFW;
 import top.theillusivec4.curios.api.client.CuriosRendererRegistry;
+import yesman.epicfight.api.client.forgeevent.PatchedRenderersEvent;
 
 public class ClientEvents {
     public static final KeyMapping USE_GRAPPLING_HOOK = new KeyMapping(
@@ -39,6 +40,9 @@ public class ClientEvents {
         @SubscribeEvent
         public static void registerKeys(RegisterKeyMappingsEvent event) {
             event.register(USE_GRAPPLING_HOOK);
+            GrapplingHookRenderDebugControls.register(event);
+            ClientSlowMotionDebugControls.register(event);
+            GrapplingHookLineDebugControls.register(event);
         }
 
         @SubscribeEvent
@@ -48,13 +52,19 @@ public class ClientEvents {
 
         @SubscribeEvent
         public static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
-            event.register(GrapplingHookCurioRenderer.ARM_MODEL);
+            event.register(GrapplingHookArmModelRenderer.ARM_MODEL);
+            event.register(GrapplingHookArmModelRenderer.ARM_PULL_MODEL);
             event.register(GrapplingHookRenderer.PROJECTILE_MODEL);
         }
 
         @SubscribeEvent
         public static void clientSetup(FMLClientSetupEvent event) {
             event.enqueueWork(() -> CuriosRendererRegistry.register(ModItems.GRAPPLING_HOOK.get(), GrapplingHookCurioRenderer::new));
+        }
+
+        @SubscribeEvent
+        public static void onModifyPatchedRenderers(PatchedRenderersEvent.Modify event) {
+            EpicFightGrapplingHookArmLayer.onModifyPatchedRenderers(event);
         }
     }
 
@@ -65,6 +75,9 @@ public class ClientEvents {
             if (event.phase != TickEvent.Phase.END) {
                 return;
             }
+            GrapplingHookRenderDebugControls.tick();
+            ClientSlowMotionDebugControls.tick();
+            GrapplingHookLineDebugControls.tick();
             while (USE_GRAPPLING_HOOK.consumeClick()) {
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
                 ClientGrapplingHookSprintRestore.recordUseAttempt();
