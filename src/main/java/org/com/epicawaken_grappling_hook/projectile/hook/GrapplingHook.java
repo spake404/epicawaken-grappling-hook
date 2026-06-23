@@ -657,6 +657,22 @@ public class GrapplingHook extends AbstractArrow {
         return this.hookType;
     }
 
+    public int getLifeForDebug() {
+        return this.life;
+    }
+
+    public boolean isHookedForDebug() {
+        return this.hooked;
+    }
+
+    public boolean isInGroundForDebug() {
+        return this.inGround;
+    }
+
+    public Vec3 getTerrainTargetForDebug() {
+        return this.terrainTarget;
+    }
+
     public enum HookType {
         AIR,
         GROUND,

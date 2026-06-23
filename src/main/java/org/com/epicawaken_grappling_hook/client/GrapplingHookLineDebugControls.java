@@ -10,6 +10,7 @@ import org.lwjgl.glfw.GLFW;
 
 public final class GrapplingHookLineDebugControls {
     private static final KeyMapping CYCLE_COLOR = key("cycle_line_color", GLFW.GLFW_KEY_KP_DECIMAL);
+    private static final KeyMapping TOGGLE_PREVIEW = key("toggle_line_preview", GLFW.GLFW_KEY_KP_ENTER);
     private static final int GRADIENT_SEGMENT_SPAN = 3;
     private static final float[][] STATIC_GRADIENT_COLORS = {
             {0.23921569F, 0.1882353F, 0.18039216F},
@@ -18,12 +19,16 @@ public final class GrapplingHookLineDebugControls {
     };
 
     private static ColorMode colorMode = ColorMode.STATIC_GRADIENT;
+    private static boolean previewEnabled;
+    private static boolean previewKeyWasDown;
+    private static boolean skipNextPreviewMappingClick;
 
     private GrapplingHookLineDebugControls() {
     }
 
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(CYCLE_COLOR);
+        event.register(TOGGLE_PREVIEW);
     }
 
     public static void tick() {
@@ -31,6 +36,37 @@ public final class GrapplingHookLineDebugControls {
             colorMode = colorMode.next();
             announce("Line color switched to " + colorMode.label);
         }
+
+        boolean toggledByKeyMapping = false;
+        while (TOGGLE_PREVIEW.consumeClick()) {
+            if (skipNextPreviewMappingClick) {
+                skipNextPreviewMappingClick = false;
+            } else {
+                togglePreview();
+                toggledByKeyMapping = true;
+            }
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean previewKeyDown = minecraft.getWindow() != null
+                && (InputConstants.isKeyDown(minecraft.getWindow().getWindow(), GLFW.GLFW_KEY_KP_ENTER)
+                || InputConstants.isKeyDown(minecraft.getWindow().getWindow(), GLFW.GLFW_KEY_ENTER));
+        if (previewKeyDown && !previewKeyWasDown && !toggledByKeyMapping) {
+            togglePreview();
+        }
+        previewKeyWasDown = previewKeyDown;
+    }
+
+    public static void onKeyInput(int key, int action) {
+        if (action == GLFW.GLFW_PRESS && isPreviewToggleKey(key)) {
+            togglePreview();
+            previewKeyWasDown = true;
+            skipNextPreviewMappingClick = true;
+        }
+    }
+
+    public static boolean isPreviewEnabled() {
+        return previewEnabled;
     }
 
     public static float red(int step) {
@@ -59,6 +95,15 @@ public final class GrapplingHookLineDebugControls {
             minecraft.player.displayClientMessage(Component.literal("[Grappling Hook Line Debug] " + message), true);
         }
         Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookLineDebug] {}", message);
+    }
+
+    private static void togglePreview() {
+        previewEnabled = !previewEnabled;
+        announce("Line preview " + (previewEnabled ? "enabled" : "disabled"));
+    }
+
+    private static boolean isPreviewToggleKey(int key) {
+        return key == GLFW.GLFW_KEY_KP_ENTER || key == GLFW.GLFW_KEY_ENTER;
     }
 
     private enum ColorMode {

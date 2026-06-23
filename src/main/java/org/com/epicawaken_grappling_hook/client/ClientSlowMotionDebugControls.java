@@ -14,9 +14,11 @@ public final class ClientSlowMotionDebugControls {
     private static final float[] SPEEDS = {1.0F, 0.5F, 0.25F, 0.1F};
 
     private static final KeyMapping CYCLE_SPEED = key("slow_motion_cycle", GLFW.GLFW_KEY_KP_MULTIPLY);
-    private static final KeyMapping RESET_SPEED = key("slow_motion_reset", GLFW.GLFW_KEY_KP_DIVIDE);
+    private static final KeyMapping RESET_SPEED = key("slow_motion_reset", GLFW.GLFW_KEY_UNKNOWN);
+    private static final KeyMapping TOGGLE_PAUSE = key("tick_pause", GLFW.GLFW_KEY_KP_DIVIDE);
 
     private static int speedIndex;
+    private static boolean paused;
 
     private ClientSlowMotionDebugControls() {
     }
@@ -24,25 +26,34 @@ public final class ClientSlowMotionDebugControls {
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(CYCLE_SPEED);
         event.register(RESET_SPEED);
+        event.register(TOGGLE_PAUSE);
     }
 
     public static void tick() {
         while (CYCLE_SPEED.consumeClick()) {
+            paused = false;
             speedIndex = (speedIndex + 1) % SPEEDS.length;
             announce();
         }
         while (RESET_SPEED.consumeClick()) {
+            paused = false;
             speedIndex = 0;
             announce();
         }
     }
 
+    public static void onKeyInput(int key, int action) {
+        if (action == GLFW.GLFW_PRESS && key == GLFW.GLFW_KEY_KP_DIVIDE) {
+            togglePause();
+        }
+    }
+
     public static float speedMultiplier() {
-        return SPEEDS[speedIndex];
+        return paused ? 0.0F : SPEEDS[speedIndex];
     }
 
     public static boolean isSlowed() {
-        return speedMultiplier() < 0.999F;
+        return paused || speedMultiplier() < 0.999F;
     }
 
     private static KeyMapping key(String name, int keyCode) {
@@ -54,11 +65,16 @@ public final class ClientSlowMotionDebugControls {
     }
 
     private static void announce() {
-        String message = String.format(Locale.ROOT, "Client slow motion: %.2fx", speedMultiplier());
+        String message = paused ? "Client ticks paused" : String.format(Locale.ROOT, "Client slow motion: %.2fx", speedMultiplier());
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null) {
             minecraft.player.displayClientMessage(Component.literal("[Grappling Hook Debug] " + message), true);
         }
         Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug] {}", message);
+    }
+
+    private static void togglePause() {
+        paused = !paused;
+        announce();
     }
 }

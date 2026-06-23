@@ -1,11 +1,9 @@
 package org.com.epicawaken_grappling_hook.projectile.hook;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
@@ -18,27 +16,27 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
-import org.com.epicawaken_grappling_hook.client.GrapplingHookLineDebugControls;
+import org.com.epicawaken_grappling_hook.client.GrapplingHookRenderDebugControls;
 import org.com.epicawaken_grappling_hook.item.ModItems;
-import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
 import org.jetbrains.annotations.NotNull;
-import org.joml.Matrix4f;
-import yesman.epicfight.gameasset.Armatures;
-import yesman.epicfight.model.armature.HumanoidArmature;
+import yesman.epicfight.api.animation.AnimationPlayer;
+import yesman.epicfight.api.asset.AssetAccessor;
 import yesman.epicfight.world.capabilities.EpicFightCapabilities;
 import yesman.epicfight.world.capabilities.entitypatch.player.PlayerPatch;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     private static final ResourceLocation HOOK_TEXTURE = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "textures/item/grappling_hook.png");
     public static final ResourceLocation PROJECTILE_MODEL = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "item/grappling_hook_projectile");
-    private static final float PROJECTILE_MODEL_SCALE = 0.85F;
     private static final float PROJECTILE_MODEL_CENTER_X = 0.0F;
     private static final float PROJECTILE_MODEL_CENTER_Y = 1.9877725F;
     private static final float PROJECTILE_MODEL_CENTER_Z = 0.34375F;
-    private static final int LEASH_RENDER_STEPS = 24;
-    private static final float LEASH_WIDTH = 0.08F;
-    private static final float LEASH_SAG = 0.18F;
+    private static final float ROTATION_LOG_THRESHOLD = 5.0F;
+    private static final Map<Integer, RotationSample> ROTATION_SAMPLES = new HashMap<>();
 
     public GrapplingHookRenderer(EntityRendererProvider.Context context) {
         super(context);
@@ -53,19 +51,112 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     public void render(GrapplingHook grapplingHook, float entityYaw, float partialTicks, @NotNull PoseStack poseStack, @NotNull MultiBufferSource bufferSource, int packedLight) {
         Entity entity = grapplingHook.getOwner();
         if (entity instanceof Player player) {
-            poseStack.pushPose();
-            this.renderConnectionLine(grapplingHook, player, partialTicks, poseStack, bufferSource, packedLight);
-            poseStack.popPose();
-            this.renderHook(grapplingHook, partialTicks, poseStack, bufferSource, packedLight);
+            this.renderHook(grapplingHook, player, partialTicks, poseStack, bufferSource, packedLight);
             super.render(grapplingHook, entityYaw, partialTicks, poseStack, bufferSource, packedLight);
         }
     }
 
-    private void renderHook(GrapplingHook grapplingHook, float partialTicks, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+    private void renderHook(GrapplingHook grapplingHook, Player owner, float partialTicks, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+        float yaw = Mth.lerp(partialTicks, grapplingHook.yRotO, grapplingHook.getYRot());
+        float pitch = Mth.lerp(partialTicks, grapplingHook.xRotO, grapplingHook.getXRot());
+        logRotationChange(grapplingHook, owner, partialTicks, yaw, pitch);
+
         poseStack.pushPose();
-        poseStack.mulPose(Axis.YP.rotationDegrees(Mth.lerp(partialTicks, grapplingHook.yRotO, grapplingHook.getYRot()) - 90.0F));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(Mth.lerp(partialTicks, grapplingHook.xRotO, grapplingHook.getXRot())));
-        poseStack.scale(PROJECTILE_MODEL_SCALE, PROJECTILE_MODEL_SCALE, PROJECTILE_MODEL_SCALE);
+        orientLikeProjectile(poseStack, yaw, pitch);
+        renderProjectileModel(poseStack, bufferSource, packedLight);
+        poseStack.popPose();
+    }
+
+    private static void logRotationChange(GrapplingHook grapplingHook, Player owner, float partialTicks, float yaw, float pitch) {
+        if (!Config.debugLogging) {
+            return;
+        }
+
+        int id = grapplingHook.getId();
+        RotationSample previous = ROTATION_SAMPLES.get(id);
+        boolean hooked = grapplingHook.isHookedForDebug();
+        boolean inGround = grapplingHook.isInGroundForDebug();
+        GrapplingHook.HookType hookType = grapplingHook.getHookType();
+        if (previous == null) {
+            ROTATION_SAMPLES.put(id, new RotationSample(yaw, pitch, hooked, inGround, hookType));
+            logRotationSample("initial", grapplingHook, owner, partialTicks, yaw, pitch, 0.0F, 0.0F);
+            return;
+        }
+
+        float yawDelta = Mth.wrapDegrees(yaw - previous.yaw);
+        float pitchDelta = Mth.wrapDegrees(pitch - previous.pitch);
+        boolean rotationChanged = Math.abs(yawDelta) >= ROTATION_LOG_THRESHOLD || Math.abs(pitchDelta) >= ROTATION_LOG_THRESHOLD;
+        boolean stateChanged = previous.hooked != hooked || previous.inGround != inGround || previous.hookType != hookType;
+        if (rotationChanged || stateChanged) {
+            logRotationSample(stateChanged ? "state_changed" : "rotation_changed", grapplingHook, owner, partialTicks, yaw, pitch, yawDelta, pitchDelta);
+            ROTATION_SAMPLES.put(id, new RotationSample(yaw, pitch, hooked, inGround, hookType));
+        }
+    }
+
+    private static void logRotationSample(String reason, GrapplingHook grapplingHook, Player owner, float partialTicks, float yaw, float pitch, float yawDelta, float pitchDelta) {
+        Vec3 movement = grapplingHook.getDeltaMovement();
+        PlayerPatch<?> playerPatch = EpicFightCapabilities.getEntityPatch(owner, PlayerPatch.class);
+        String realAnimation = "none";
+        String rawAnimation = "none";
+        if (playerPatch != null) {
+            AnimationPlayer animationPlayer = playerPatch.getAnimator().getPlayerFor(null);
+            if (animationPlayer != null) {
+                realAnimation = animationName(animationPlayer.getRealAnimation());
+                rawAnimation = animationName(animationPlayer.getAnimation());
+            }
+        }
+
+        Epicawaken_grappling_hook.LOGGER.info(
+                "[GrapplingHookProjectileRotationDebug] reason={} entity={} life={} partial={} yaw={} pitch={} yawDelta={} pitchDelta={} yRotO={} yRot={} xRotO={} xRot={} movement={} movementLenSqr={} hooked={} inGround={} hookType={} terrainTarget={} ownerDistance={} ownerYaw={} ownerPitch={} ownerBodyYaw={} realAnimation={} rawAnimation={}",
+                reason,
+                grapplingHook.getId(),
+                grapplingHook.getLifeForDebug(),
+                partialTicks,
+                yaw,
+                pitch,
+                yawDelta,
+                pitchDelta,
+                grapplingHook.yRotO,
+                grapplingHook.getYRot(),
+                grapplingHook.xRotO,
+                grapplingHook.getXRot(),
+                movement,
+                movement.lengthSqr(),
+                grapplingHook.isHookedForDebug(),
+                grapplingHook.isInGroundForDebug(),
+                grapplingHook.getHookType(),
+                grapplingHook.getTerrainTargetForDebug(),
+                owner.distanceTo(grapplingHook),
+                owner.getYRot(),
+                owner.getXRot(),
+                owner.yBodyRot,
+                realAnimation,
+                rawAnimation);
+    }
+
+    private static String animationName(AssetAccessor<?> animation) {
+        return animation == null ? "null" : String.valueOf(animation.registryName());
+    }
+
+    public static void orientLikeProjectile(PoseStack poseStack, float yaw, float pitch) {
+        poseStack.mulPose(Axis.YP.rotationDegrees(yaw - 90.0F));
+        poseStack.mulPose(Axis.ZP.rotationDegrees(pitch));
+    }
+
+    public static void orientToDirection(PoseStack poseStack, Vec3 direction) {
+        if (direction.lengthSqr() < 1.0E-6D) {
+            return;
+        }
+        Vec3 normalized = direction.normalize();
+        double horizontalLength = Math.sqrt(normalized.x * normalized.x + normalized.z * normalized.z);
+        float yaw = (float) (Mth.atan2(normalized.z, normalized.x) * Mth.RAD_TO_DEG);
+        float pitch = (float) (Mth.atan2(normalized.y, horizontalLength) * Mth.RAD_TO_DEG);
+        orientLikeProjectile(poseStack, yaw, pitch);
+    }
+
+    public static void renderProjectileModel(PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+        poseStack.pushPose();
+        GrapplingHookRenderDebugControls.applyProjectileArrowTransform(poseStack);
         poseStack.translate(-PROJECTILE_MODEL_CENTER_X, -PROJECTILE_MODEL_CENTER_Y, -PROJECTILE_MODEL_CENTER_Z);
         Minecraft minecraft = Minecraft.getInstance();
         BakedModel model = minecraft.getModelManager().getModel(PROJECTILE_MODEL);
@@ -81,73 +172,7 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
         poseStack.popPose();
     }
 
-    private void renderConnectionLine(GrapplingHook grapplingHook, Player player, float partialTicks, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
-        PlayerPatch<?> playerPatch = EpicFightCapabilities.getEntityPatch(player, PlayerPatch.class);
-        if (playerPatch == null) {
-            return;
-        }
-
-        Vec3 leftHandPos = ArmatureUtil.getJointWorldPos(playerPatch, ((HumanoidArmature) Armatures.BIPED.get()).toolL, partialTicks);
-        Vec3 hookPos = new Vec3(
-                Mth.lerp(partialTicks, grapplingHook.xo, grapplingHook.getX()),
-                Mth.lerp(partialTicks, grapplingHook.yo, grapplingHook.getY()),
-                Mth.lerp(partialTicks, grapplingHook.zo, grapplingHook.getZ()));
-        Vec3 vector = leftHandPos.subtract(hookPos);
-        float x = (float) vector.x;
-        float y = (float) vector.y;
-        float z = (float) vector.z;
-        float horizontalLengthSqr = x * x + z * z;
-        float sideX;
-        float sideZ;
-        if (horizontalLengthSqr < 1.0E-6F) {
-            sideX = LEASH_WIDTH * 0.5F;
-            sideZ = 0.0F;
-        } else {
-            float invHorizontalLength = Mth.invSqrt(horizontalLengthSqr) * LEASH_WIDTH * 0.5F;
-            sideX = z * invHorizontalLength;
-            sideZ = -x * invHorizontalLength;
-        }
-
-        VertexConsumer lineConsumer = bufferSource.getBuffer(RenderType.leash());
-        Matrix4f matrix = poseStack.last().pose();
-        for (int step = 0; step <= LEASH_RENDER_STEPS; step++) {
-            addLeashVertexPair(lineConsumer, matrix, x, y, z, sideX, sideZ, packedLight, step, false);
-        }
-        for (int step = LEASH_RENDER_STEPS; step >= 0; step--) {
-            addLeashVertexPair(lineConsumer, matrix, x, y, z, sideX, sideZ, packedLight, step, true);
-        }
-    }
-
-    private static void addLeashVertexPair(
-            VertexConsumer consumer,
-            Matrix4f matrix,
-            float x,
-            float y,
-            float z,
-            float sideX,
-            float sideZ,
-            int packedLight,
-            int step,
-            boolean reverse) {
-        float t = (float) step / LEASH_RENDER_STEPS;
-        float shade = (step % 2 == (reverse ? 1 : 0)) ? 0.7F : 1.0F;
-        float px = x * t;
-        float py = y * t - LEASH_SAG * t * (1.0F - t);
-        float pz = z * t;
-        float firstYOffset = reverse ? 0.0F : LEASH_WIDTH;
-        float secondYOffset = LEASH_WIDTH - firstYOffset;
-        float red = GrapplingHookLineDebugControls.red(step) * shade;
-        float green = GrapplingHookLineDebugControls.green(step) * shade;
-        float blue = GrapplingHookLineDebugControls.blue(step) * shade;
-
-        consumer.vertex(matrix, px + sideX, py + firstYOffset, pz + sideZ)
-                .color(red, green, blue, 1.0F)
-                .uv2(packedLight)
-                .endVertex();
-        consumer.vertex(matrix, px - sideX, py + secondYOffset, pz - sideZ)
-                .color(red, green, blue, 1.0F)
-                .uv2(packedLight)
-                .endVertex();
+    private record RotationSample(float yaw, float pitch, boolean hooked, boolean inGround, GrapplingHook.HookType hookType) {
     }
 
     @Override
