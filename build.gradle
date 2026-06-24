@@ -140,9 +140,9 @@ repositories {
 
     // If you have mod jar dependencies in ./libs, you can declare them as a repository like so.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
-    // flatDir {
-    //     dir 'libs'
-    // }
+    flatDir {
+        dir 'libs'
+    }
 }
 
 dependencies {
@@ -172,13 +172,13 @@ dependencies {
     implementation fg.deobf("curse.maven:official-epic-fight-x-parcool-1259252:6870242")
     implementation fg.deobf("curse.maven:parcool-482378:7760589")
     implementation fg.deobf("curse.maven:weapons-of-miracles-epicfight-918614:7517612")
-    implementation fg.deobf("curse.maven:epic-parcool-momentum-1549844:8220846")
     implementation fg.deobf("curse.maven:epicfight-skill-extraslots-1544455:8152635")
     implementation fg.deobf("curse.maven:configured-457570:5180900")
     compileOnly fg.deobf("curse.maven:sophisticated-backpacks-422301:8272350")
     compileOnly fg.deobf("curse.maven:sophisticated-core-618298:8272318")
     implementation fg.deobf("curse.maven:epicfightcurioscompat-1389133:7866027")
     implementation fg.deobf("curse.maven:free-cam-557076:4643128")
+    implementation fg.deobf("blank:epic_parcool_momentum:4.0.0")
 
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html

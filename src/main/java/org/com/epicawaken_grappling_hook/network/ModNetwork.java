@@ -42,6 +42,11 @@ public class ModNetwork {
                 .decoder(StopGrapplingHookFovPacket::decode)
                 .consumerMainThread(StopGrapplingHookFovPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(SyncGrapplingHookForwardInputPacket.class, packetId++)
+                .encoder(SyncGrapplingHookForwardInputPacket::encode)
+                .decoder(SyncGrapplingHookForwardInputPacket::decode)
+                .consumerMainThread(SyncGrapplingHookForwardInputPacket::handle)
+                .add();
     }
 
     private ModNetwork() {

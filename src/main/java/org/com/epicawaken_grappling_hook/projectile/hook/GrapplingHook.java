@@ -24,6 +24,7 @@ import org.com.epicawaken_grappling_hook.network.StartGrapplingHookFovPacket;
 import org.com.epicawaken_grappling_hook.network.StopGrapplingHookFovPacket;
 import org.com.epicawaken_grappling_hook.network.SyncGrapplingHookArrivalPacket;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookArrivalTracker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookForwardInputTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 import org.com.epicawaken_grappling_hook.util.GroundHookSlideTracker;
 import org.jetbrains.annotations.NotNull;
@@ -42,6 +43,7 @@ public class GrapplingHook extends AbstractArrow {
     private static final double TERRAIN_PULL_VERTICAL_ARRIVAL_DISTANCE = 0.45D;
     private static final double TERRAIN_PULL_OVERSHOOT_DISTANCE = 0.75D;
     private static final double WALL_TARGET_SURFACE_GAP = 0.0D;
+    private static final double AIR_ARRIVAL_FORWARD_BOOST_Y_MULTIPLIER = 2.0D;
 
     private int life;
     private boolean hooked;
@@ -277,7 +279,7 @@ public class GrapplingHook extends AbstractArrow {
                             this.terrainTarget,
                             owner != null ? owner.getDeltaMovement() : null);
                 }
-                this.finishTerrainPull(owner);
+                this.finishTerrainPull(owner, finishedPull);
                 this.startGroundHookSlide(owner);
                 this.discardHook();
             }
@@ -339,7 +341,7 @@ public class GrapplingHook extends AbstractArrow {
             }
 
             if (finishedPull || this.life == pullEndTick) {
-                this.finishTerrainPull(this.getOwner());
+                this.finishTerrainPull(this.getOwner(), finishedPull);
                 this.discardHook();
             }
             return true;
@@ -532,6 +534,7 @@ public class GrapplingHook extends AbstractArrow {
     private void markTerrainPullArrived(Entity owner) {
         this.terrainPullArrived = true;
         this.stopOwnerTerrainPull(owner, this.terrainTarget);
+        this.applyAirArrivalForwardBoost(owner, "mark_arrived");
         if (Config.debugLogging) {
             Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] markTerrainPullArrived hookType={} hookLife={} owner={} ownerPos={} target={}",
                     this.hookType,
@@ -543,7 +546,7 @@ public class GrapplingHook extends AbstractArrow {
         this.syncTerrainPullArrival(owner);
     }
 
-    private void finishTerrainPull(Entity owner) {
+    private void finishTerrainPull(Entity owner, boolean allowArrivalBoost) {
         if (owner == null) {
             return;
         }
@@ -553,6 +556,9 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         this.stopOwnerTerrainPull(owner, this.terrainTarget);
+        if (allowArrivalBoost) {
+            this.applyAirArrivalForwardBoost(owner, "finish_pull");
+        }
 
         this.syncTerrainPullArrival(owner);
     }
@@ -560,6 +566,79 @@ public class GrapplingHook extends AbstractArrow {
     private void stopOwnerTerrainPull(Entity owner, Vec3 target) {
         owner.fallDistance = 0.0F;
         owner.hurtMarked = true;
+    }
+
+    private void applyAirArrivalForwardBoost(Entity owner, String reason) {
+        if (!Config.airHookArrivalForwardBoostEnabled
+                || this.hookType != HookType.AIR
+                || !(owner instanceof ServerPlayer serverPlayer)
+                || !GrapplingHookForwardInputTracker.isForwardDown(serverPlayer, Config.airHookArrivalForwardBoostInputGraceTicks)) {
+            return;
+        }
+
+        Vec3 direction = this.airArrivalForwardBoostDirection(owner);
+        if (direction.lengthSqr() <= 1.0E-6D) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookBoostDebug][SERVER] skipped air arrival boost owner={} hookLife={} reason={} direction={} terrainTarget={} lastPullVelocity={}",
+                        owner.getId(),
+                        this.life,
+                        reason,
+                        direction,
+                        this.terrainTarget,
+                        this.lastTerrainPullVelocity);
+            }
+            return;
+        }
+
+        double speed = this.airArrivalForwardBoostSpeed(owner);
+        Vec3 boost = direction.normalize().scale(speed);
+        boost = new Vec3(boost.x, boost.y * AIR_ARRIVAL_FORWARD_BOOST_Y_MULTIPLIER, boost.z);
+        Vec3 oldVelocity = owner.getDeltaMovement();
+        owner.setDeltaMovement(boost);
+        owner.fallDistance = 0.0F;
+        owner.hurtMarked = true;
+        GrapplingHookParcoolBlocker.block(owner, 4);
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookBoostDebug][SERVER] applied air arrival boost owner={} hookLife={} reason={} speed={} yMultiplier={} boost={} oldVelocity={} newVelocity={} terrainTarget={} lastPullVelocity={}",
+                    owner.getId(),
+                    this.life,
+                    reason,
+                    speed,
+                    AIR_ARRIVAL_FORWARD_BOOST_Y_MULTIPLIER,
+                    boost,
+                    oldVelocity,
+                    owner.getDeltaMovement(),
+                    this.terrainTarget,
+                    this.lastTerrainPullVelocity);
+        }
+    }
+
+    private Vec3 airArrivalForwardBoostDirection(Entity owner) {
+        if (this.lastTerrainPullVelocity != null && this.lastTerrainPullVelocity.lengthSqr() > 1.0E-6D) {
+            return this.lastTerrainPullVelocity.normalize();
+        }
+        if (this.terrainTarget != null) {
+            Vec3 toTarget = this.terrainTarget.subtract(owner.position());
+            if (toTarget.lengthSqr() > 1.0E-6D) {
+                return toTarget.normalize();
+            }
+        }
+        Vec3 toHook = this.position().subtract(owner.position());
+        if (toHook.lengthSqr() > 1.0E-6D) {
+            return toHook.normalize();
+        }
+        return Vec3.ZERO;
+    }
+
+    private double airArrivalForwardBoostSpeed(Entity owner) {
+        if (this.lastTerrainPullVelocity != null && this.lastTerrainPullVelocity.lengthSqr() > 1.0E-6D) {
+            return this.lastTerrainPullVelocity.length();
+        }
+        Vec3 currentVelocity = owner.getDeltaMovement();
+        if (currentVelocity.lengthSqr() > 1.0E-6D) {
+            return currentVelocity.length();
+        }
+        return Config.airHookArrivalForwardBoostStrength;
     }
 
     private double getTargetPullMinSpeed() {

@@ -96,6 +96,7 @@ public class ClientEvents {
             GrapplingHookRenderDebugControls.tick();
             ClientSlowMotionDebugControls.tick();
             GrapplingHookLineDebugControls.tick();
+            ClientGrapplingHookForwardInputSync.tick();
             while (USE_GRAPPLING_HOOK.consumeClick()) {
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
                 ClientGrapplingHookSprintRestore.recordUseAttempt();

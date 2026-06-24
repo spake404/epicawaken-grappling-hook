@@ -37,6 +37,7 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     private static final float PROJECTILE_MODEL_CENTER_Z = 0.34375F;
     private static final float ROTATION_LOG_THRESHOLD = 5.0F;
     private static final Map<Integer, RotationSample> ROTATION_SAMPLES = new HashMap<>();
+    private static final Map<Integer, RenderRotation> RENDER_ROTATIONS = new HashMap<>();
 
     public GrapplingHookRenderer(EntityRendererProvider.Context context) {
         super(context);
@@ -57,14 +58,38 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     }
 
     private void renderHook(GrapplingHook grapplingHook, Player owner, float partialTicks, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
-        float yaw = Mth.lerp(partialTicks, grapplingHook.yRotO, grapplingHook.getYRot());
-        float pitch = Mth.lerp(partialTicks, grapplingHook.xRotO, grapplingHook.getXRot());
-        logRotationChange(grapplingHook, owner, partialTicks, yaw, pitch);
+        float entityYaw = Mth.lerp(partialTicks, grapplingHook.yRotO, grapplingHook.getYRot());
+        float entityPitch = Mth.lerp(partialTicks, grapplingHook.xRotO, grapplingHook.getXRot());
+        RenderRotation renderRotation = renderRotation(grapplingHook, entityYaw, entityPitch);
+        logRotationChange(grapplingHook, owner, partialTicks, entityYaw, entityPitch);
 
         poseStack.pushPose();
-        orientLikeProjectile(poseStack, yaw, pitch);
+        orientLikeProjectile(poseStack, renderRotation.yaw, renderRotation.pitch);
         renderProjectileModel(poseStack, bufferSource, packedLight);
         poseStack.popPose();
+    }
+
+    private static RenderRotation renderRotation(GrapplingHook grapplingHook, float entityYaw, float entityPitch) {
+        int id = grapplingHook.getId();
+        RenderRotation cached = RENDER_ROTATIONS.get(id);
+        if (shouldFreezeUnhitRenderRotation(grapplingHook)) {
+            if (cached == null) {
+                cached = new RenderRotation(entityYaw, entityPitch);
+                RENDER_ROTATIONS.put(id, cached);
+            }
+            return cached;
+        }
+
+        RenderRotation current = new RenderRotation(entityYaw, entityPitch);
+        RENDER_ROTATIONS.put(id, current);
+        return current;
+    }
+
+    private static boolean shouldFreezeUnhitRenderRotation(GrapplingHook grapplingHook) {
+        return grapplingHook.isHookedForDebug()
+                && !grapplingHook.isInGroundForDebug()
+                && grapplingHook.getHookType() != GrapplingHook.HookType.ENTITY
+                && grapplingHook.getDeltaMovement().lengthSqr() <= 1.0E-6D;
     }
 
     private static void logRotationChange(GrapplingHook grapplingHook, Player owner, float partialTicks, float yaw, float pitch) {
@@ -173,6 +198,9 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     }
 
     private record RotationSample(float yaw, float pitch, boolean hooked, boolean inGround, GrapplingHook.HookType hookType) {
+    }
+
+    private record RenderRotation(float yaw, float pitch) {
     }
 
     @Override

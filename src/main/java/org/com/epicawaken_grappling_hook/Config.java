@@ -39,6 +39,9 @@ public class Config {
     private static final ForgeConfigSpec.DoubleValue AIR_HOOK_TARGET_PULL_ARRIVAL_DISTANCE;
     private static final ForgeConfigSpec.BooleanValue AIR_HOOK_TARGET_PULL_SNAP_TO_TARGET;
     private static final ForgeConfigSpec.IntValue AIR_HOOK_FOV_HOLD_TAIL_TICKS;
+    private static final ForgeConfigSpec.BooleanValue AIR_HOOK_ARRIVAL_FORWARD_BOOST_ENABLED;
+    private static final ForgeConfigSpec.DoubleValue AIR_HOOK_ARRIVAL_FORWARD_BOOST_STRENGTH;
+    private static final ForgeConfigSpec.IntValue AIR_HOOK_ARRIVAL_FORWARD_BOOST_INPUT_GRACE_TICKS;
 
     private static final ForgeConfigSpec.DoubleValue ENTITY_PULL_STRENGTH_MULTIPLIER;
     private static final ForgeConfigSpec.DoubleValue ENTITY_PULL_UP_BOOST;
@@ -152,6 +155,18 @@ public class Config {
                 .comment("Client-side ticks to keep the captured pre-hook FOV after HOOK_AIR pull ends. This smooths transitions into wall-running.")
                 .translation("config.epicawaken_grappling_hook.airHookFovHoldTailTicks")
                 .defineInRange("airHookFovHoldTailTicks", 24, 0, 80);
+        AIR_HOOK_ARRIVAL_FORWARD_BOOST_ENABLED = BUILDER
+                .comment("Whether HOOK_AIR gives the player one extra forward boost on arrival when the forward key is still held.")
+                .translation("config.epicawaken_grappling_hook.airHookArrivalForwardBoostEnabled")
+                .define("airHookArrivalForwardBoostEnabled", true);
+        AIR_HOOK_ARRIVAL_FORWARD_BOOST_STRENGTH = BUILDER
+                .comment("Fallback velocity used when HOOK_AIR arrives and the forward key is still held, only when no recent pull velocity is available.")
+                .translation("config.epicawaken_grappling_hook.airHookArrivalForwardBoostStrength")
+                .defineInRange("airHookArrivalForwardBoostStrength", 0.9D, 0.0D, 3.0D);
+        AIR_HOOK_ARRIVAL_FORWARD_BOOST_INPUT_GRACE_TICKS = BUILDER
+                .comment("Server-side grace period in ticks for the last received forward-key state before HOOK_AIR arrival.")
+                .translation("config.epicawaken_grappling_hook.airHookArrivalForwardBoostInputGraceTicks")
+                .defineInRange("airHookArrivalForwardBoostInputGraceTicks", 5, 0, 20);
         BUILDER.pop();
 
         BUILDER.push("entity_hook");
@@ -199,6 +214,9 @@ public class Config {
     public static double airHookTargetPullArrivalDistance;
     public static boolean airHookTargetPullSnapToTarget;
     public static int airHookFovHoldTailTicks;
+    public static boolean airHookArrivalForwardBoostEnabled;
+    public static double airHookArrivalForwardBoostStrength;
+    public static int airHookArrivalForwardBoostInputGraceTicks;
 
     public static double entityPullStrengthMultiplier;
     public static double entityPullUpBoost;
@@ -233,6 +251,9 @@ public class Config {
         airHookTargetPullArrivalDistance = AIR_HOOK_TARGET_PULL_ARRIVAL_DISTANCE.get();
         airHookTargetPullSnapToTarget = AIR_HOOK_TARGET_PULL_SNAP_TO_TARGET.get();
         airHookFovHoldTailTicks = AIR_HOOK_FOV_HOLD_TAIL_TICKS.get();
+        airHookArrivalForwardBoostEnabled = AIR_HOOK_ARRIVAL_FORWARD_BOOST_ENABLED.get();
+        airHookArrivalForwardBoostStrength = AIR_HOOK_ARRIVAL_FORWARD_BOOST_STRENGTH.get();
+        airHookArrivalForwardBoostInputGraceTicks = AIR_HOOK_ARRIVAL_FORWARD_BOOST_INPUT_GRACE_TICKS.get();
 
         entityPullStrengthMultiplier = ENTITY_PULL_STRENGTH_MULTIPLIER.get();
         entityPullUpBoost = ENTITY_PULL_UP_BOOST.get();
