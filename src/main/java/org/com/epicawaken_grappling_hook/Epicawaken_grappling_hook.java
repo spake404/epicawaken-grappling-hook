@@ -17,7 +17,6 @@ import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
-import org.com.epicawaken_grappling_hook.util.AwakenAnimationHooks;
 import org.slf4j.Logger;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.type.capability.ICurioItem;
@@ -53,7 +52,6 @@ public class Epicawaken_grappling_hook {
     private void commonSetup(final FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             CuriosApi.registerCurio(ModItems.GRAPPLING_HOOK.get(), (ICurioItem) ModItems.GRAPPLING_HOOK.get());
-            AwakenAnimationHooks.register();
             ModNetwork.register();
         });
     }

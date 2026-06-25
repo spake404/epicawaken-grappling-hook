@@ -32,6 +32,11 @@ public class ModNetwork {
                 .decoder(SyncGrapplingHookArrivalPacket::decode)
                 .consumerMainThread(SyncGrapplingHookArrivalPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(SyncGrapplingHookMissedPacket.class, packetId++)
+                .encoder(SyncGrapplingHookMissedPacket::encode)
+                .decoder(SyncGrapplingHookMissedPacket::decode)
+                .consumerMainThread(SyncGrapplingHookMissedPacket::handle)
+                .add();
         CHANNEL.messageBuilder(StartGrapplingHookFovPacket.class, packetId++)
                 .encoder(StartGrapplingHookFovPacket::encode)
                 .decoder(StartGrapplingHookFovPacket::decode)
@@ -42,10 +47,10 @@ public class ModNetwork {
                 .decoder(StopGrapplingHookFovPacket::decode)
                 .consumerMainThread(StopGrapplingHookFovPacket::handle)
                 .add();
-        CHANNEL.messageBuilder(SyncGrapplingHookForwardInputPacket.class, packetId++)
-                .encoder(SyncGrapplingHookForwardInputPacket::encode)
-                .decoder(SyncGrapplingHookForwardInputPacket::decode)
-                .consumerMainThread(SyncGrapplingHookForwardInputPacket::handle)
+        CHANNEL.messageBuilder(SyncGrapplingHookJumpInputPacket.class, packetId++)
+                .encoder(SyncGrapplingHookJumpInputPacket::encode)
+                .decoder(SyncGrapplingHookJumpInputPacket::decode)
+                .consumerMainThread(SyncGrapplingHookJumpInputPacket::handle)
                 .add();
     }
 

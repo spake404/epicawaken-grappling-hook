@@ -18,6 +18,7 @@ public class Config {
     private static final ForgeConfigSpec.IntValue MAX_LIFE_TICKS;
     private static final ForgeConfigSpec.BooleanValue DEBUG_LOGGING;
     private static final ForgeConfigSpec.BooleanValue DISABLE_PARCOOL_CRAWL_AND_SLIDE_DURING_HOOK;
+    private static final ForgeConfigSpec.IntValue MISSED_HOOK_GROUND_ANIMATION_DURATION_TICKS;
 
     private static final ForgeConfigSpec.DoubleValue GROUND_HOOK_PULL_STRENGTH;
     private static final ForgeConfigSpec.BooleanValue GROUND_HOOK_SLIDE_ENABLED;
@@ -39,9 +40,14 @@ public class Config {
     private static final ForgeConfigSpec.DoubleValue AIR_HOOK_TARGET_PULL_ARRIVAL_DISTANCE;
     private static final ForgeConfigSpec.BooleanValue AIR_HOOK_TARGET_PULL_SNAP_TO_TARGET;
     private static final ForgeConfigSpec.IntValue AIR_HOOK_FOV_HOLD_TAIL_TICKS;
-    private static final ForgeConfigSpec.BooleanValue AIR_HOOK_ARRIVAL_FORWARD_BOOST_ENABLED;
-    private static final ForgeConfigSpec.DoubleValue AIR_HOOK_ARRIVAL_FORWARD_BOOST_STRENGTH;
-    private static final ForgeConfigSpec.IntValue AIR_HOOK_ARRIVAL_FORWARD_BOOST_INPUT_GRACE_TICKS;
+
+    private static final ForgeConfigSpec.BooleanValue WALL_HOOK_FACING_RETARGET_ENABLED;
+    private static final ForgeConfigSpec.BooleanValue WALL_HOOK_FACING_RETARGET_ADAPTIVE_ENABLED;
+    private static final ForgeConfigSpec.DoubleValue WALL_HOOK_FACING_RETARGET_ANGLE_WIDTH_DEGREES;
+    private static final ForgeConfigSpec.DoubleValue WALL_HOOK_FACING_RETARGET_MIN_UP_OFFSET;
+    private static final ForgeConfigSpec.DoubleValue WALL_HOOK_FACING_RETARGET_UP_OFFSET;
+    private static final ForgeConfigSpec.DoubleValue WALL_HOOK_FACING_RETARGET_SEARCH_STEP;
+    private static final ForgeConfigSpec.DoubleValue WALL_HOOK_FACING_RETARGET_FORWARD_OFFSET;
 
     private static final ForgeConfigSpec.DoubleValue ENTITY_PULL_STRENGTH_MULTIPLIER;
     private static final ForgeConfigSpec.DoubleValue ENTITY_PULL_UP_BOOST;
@@ -73,6 +79,10 @@ public class Config {
                 .comment("Prevents Parcool crawl and slide while grappling hook animations, pulls, or ground slides are active.")
                 .translation("config.epicawaken_grappling_hook.disableParcoolCrawlAndSlideDuringHook")
                 .define("disableParcoolCrawlAndSlideDuringHook", true);
+        MISSED_HOOK_GROUND_ANIMATION_DURATION_TICKS = BUILDER
+                .comment("How many server ticks the missed-hook projectile stays around after an empty hook locks. No pull is applied.")
+                .translation("config.epicawaken_grappling_hook.missedHookGroundAnimationDurationTicks")
+                .defineInRange("missedHookGroundAnimationDurationTicks", 10, 1, 80);
         BUILDER.pop();
 
         BUILDER.push("ground_hook");
@@ -155,18 +165,37 @@ public class Config {
                 .comment("Client-side ticks to keep the captured pre-hook FOV after HOOK_AIR pull ends. This smooths transitions into wall-running.")
                 .translation("config.epicawaken_grappling_hook.airHookFovHoldTailTicks")
                 .defineInRange("airHookFovHoldTailTicks", 24, 0, 80);
-        AIR_HOOK_ARRIVAL_FORWARD_BOOST_ENABLED = BUILDER
-                .comment("Whether HOOK_AIR gives the player one extra forward boost on arrival when the forward key is still held.")
-                .translation("config.epicawaken_grappling_hook.airHookArrivalForwardBoostEnabled")
-                .define("airHookArrivalForwardBoostEnabled", true);
-        AIR_HOOK_ARRIVAL_FORWARD_BOOST_STRENGTH = BUILDER
-                .comment("Fallback velocity used when HOOK_AIR arrives and the forward key is still held, only when no recent pull velocity is available.")
-                .translation("config.epicawaken_grappling_hook.airHookArrivalForwardBoostStrength")
-                .defineInRange("airHookArrivalForwardBoostStrength", 0.9D, 0.0D, 3.0D);
-        AIR_HOOK_ARRIVAL_FORWARD_BOOST_INPUT_GRACE_TICKS = BUILDER
-                .comment("Server-side grace period in ticks for the last received forward-key state before HOOK_AIR arrival.")
-                .translation("config.epicawaken_grappling_hook.airHookArrivalForwardBoostInputGraceTicks")
-                .defineInRange("airHookArrivalForwardBoostInputGraceTicks", 5, 0, 20);
+        BUILDER.pop();
+
+        BUILDER.push("wall_hook");
+        WALL_HOOK_FACING_RETARGET_ENABLED = BUILDER
+                .comment("Whether a wall hook retargets to a point above the impact when the player is facing the wall.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetEnabled")
+                .define("wallHookFacingRetargetEnabled", true);
+        WALL_HOOK_FACING_RETARGET_ADAPTIVE_ENABLED = BUILDER
+                .comment("Whether facing-wall hook retargeting searches for the nearest collision-free point between the minimum and maximum up offsets.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetAdaptiveEnabled")
+                .define("wallHookFacingRetargetAdaptiveEnabled", true);
+        WALL_HOOK_FACING_RETARGET_ANGLE_WIDTH_DEGREES = BUILDER
+                .comment("Total horizontal angle width in degrees for facing-wall retargeting. For example, 120 means 60 degrees left and 60 degrees right from directly facing the wall.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetAngleWidthDegrees")
+                .defineInRange("wallHookFacingRetargetAngleWidthDegrees", 132.0D, 0.0D, 180.0D);
+        WALL_HOOK_FACING_RETARGET_MIN_UP_OFFSET = BUILDER
+                .comment("Minimum vertical offset in blocks used by adaptive facing-wall hook retargeting.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetMinUpOffset")
+                .defineInRange("wallHookFacingRetargetMinUpOffset", 0.5D, 0.0D, 8.0D);
+        WALL_HOOK_FACING_RETARGET_UP_OFFSET = BUILDER
+                .comment("Maximum vertical offset in blocks for adaptive facing-wall hook retargeting. Also used as the fallback fixed offset.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetUpOffset")
+                .defineInRange("wallHookFacingRetargetUpOffset", 3.0D, 0.0D, 8.0D);
+        WALL_HOOK_FACING_RETARGET_SEARCH_STEP = BUILDER
+                .comment("Vertical step in blocks used while adaptive facing-wall hook retargeting searches for the nearest collision-free point.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetSearchStep")
+                .defineInRange("wallHookFacingRetargetSearchStep", 0.25D, 0.05D, 2.0D);
+        WALL_HOOK_FACING_RETARGET_FORWARD_OFFSET = BUILDER
+                .comment("Outward offset from the wall surface in blocks for the facing-wall retarget point.")
+                .translation("config.epicawaken_grappling_hook.wallHookFacingRetargetForwardOffset")
+                .defineInRange("wallHookFacingRetargetForwardOffset", 0.45D, 0.0D, 2.0D);
         BUILDER.pop();
 
         BUILDER.push("entity_hook");
@@ -193,6 +222,7 @@ public class Config {
     public static int maxLifeTicks;
     public static boolean debugLogging;
     public static boolean disableParcoolCrawlAndSlideDuringHook;
+    public static int missedHookGroundAnimationDurationTicks;
 
     public static double groundHookPullStrength;
     public static boolean groundHookSlideEnabled;
@@ -214,9 +244,24 @@ public class Config {
     public static double airHookTargetPullArrivalDistance;
     public static boolean airHookTargetPullSnapToTarget;
     public static int airHookFovHoldTailTicks;
-    public static boolean airHookArrivalForwardBoostEnabled;
-    public static double airHookArrivalForwardBoostStrength;
-    public static int airHookArrivalForwardBoostInputGraceTicks;
+
+    public static boolean wallHookFacingRetargetEnabled;
+    public static boolean wallHookFacingRetargetAdaptiveEnabled;
+    public static double wallHookFacingRetargetAngleWidthDegrees;
+    public static double wallHookFacingRetargetHalfAngleDegrees;
+    public static double wallHookFacingRetargetDot;
+    public static double wallHookFacingRetargetMinUpOffset;
+    public static double wallHookFacingRetargetUpOffset;
+    public static double wallHookFacingRetargetSearchStep;
+    public static double wallHookFacingRetargetForwardOffset;
+
+    // Hidden prototype module. Kept in code for later experiments, but not exposed in Forge config.
+    public static boolean airHookArrivalJumpEnabled = false;
+    public static int airHookArrivalJumpWindowTicks = 10;
+    public static double airHookArrivalJumpInitialSpeed = 0.65D;
+    public static int airHookArrivalJumpDurationTicks = 8;
+    public static double airHookArrivalJumpFriction = 0.86D;
+    public static double airHookArrivalJumpMinSpeed = 0.12D;
 
     public static double entityPullStrengthMultiplier;
     public static double entityPullUpBoost;
@@ -230,6 +275,7 @@ public class Config {
         maxLifeTicks = MAX_LIFE_TICKS.get();
         debugLogging = DEBUG_LOGGING.get();
         disableParcoolCrawlAndSlideDuringHook = DISABLE_PARCOOL_CRAWL_AND_SLIDE_DURING_HOOK.get();
+        missedHookGroundAnimationDurationTicks = MISSED_HOOK_GROUND_ANIMATION_DURATION_TICKS.get();
 
         groundHookPullStrength = GROUND_HOOK_PULL_STRENGTH.get();
         groundHookSlideEnabled = GROUND_HOOK_SLIDE_ENABLED.get();
@@ -251,9 +297,16 @@ public class Config {
         airHookTargetPullArrivalDistance = AIR_HOOK_TARGET_PULL_ARRIVAL_DISTANCE.get();
         airHookTargetPullSnapToTarget = AIR_HOOK_TARGET_PULL_SNAP_TO_TARGET.get();
         airHookFovHoldTailTicks = AIR_HOOK_FOV_HOLD_TAIL_TICKS.get();
-        airHookArrivalForwardBoostEnabled = AIR_HOOK_ARRIVAL_FORWARD_BOOST_ENABLED.get();
-        airHookArrivalForwardBoostStrength = AIR_HOOK_ARRIVAL_FORWARD_BOOST_STRENGTH.get();
-        airHookArrivalForwardBoostInputGraceTicks = AIR_HOOK_ARRIVAL_FORWARD_BOOST_INPUT_GRACE_TICKS.get();
+
+        wallHookFacingRetargetEnabled = WALL_HOOK_FACING_RETARGET_ENABLED.get();
+        wallHookFacingRetargetAdaptiveEnabled = WALL_HOOK_FACING_RETARGET_ADAPTIVE_ENABLED.get();
+        wallHookFacingRetargetAngleWidthDegrees = WALL_HOOK_FACING_RETARGET_ANGLE_WIDTH_DEGREES.get();
+        wallHookFacingRetargetHalfAngleDegrees = wallHookFacingRetargetAngleWidthDegrees * 0.5D;
+        wallHookFacingRetargetDot = Math.cos(Math.toRadians(wallHookFacingRetargetHalfAngleDegrees));
+        wallHookFacingRetargetMinUpOffset = WALL_HOOK_FACING_RETARGET_MIN_UP_OFFSET.get();
+        wallHookFacingRetargetUpOffset = WALL_HOOK_FACING_RETARGET_UP_OFFSET.get();
+        wallHookFacingRetargetSearchStep = WALL_HOOK_FACING_RETARGET_SEARCH_STEP.get();
+        wallHookFacingRetargetForwardOffset = WALL_HOOK_FACING_RETARGET_FORWARD_OFFSET.get();
 
         entityPullStrengthMultiplier = ENTITY_PULL_STRENGTH_MULTIPLIER.get();
         entityPullUpBoost = ENTITY_PULL_UP_BOOST.get();

@@ -1,6 +1,7 @@
 package org.com.epicawaken_grappling_hook.projectile.hook;
 
 import net.minecraft.util.Mth;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -12,6 +13,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -23,8 +25,10 @@ import org.com.epicawaken_grappling_hook.network.ModNetwork;
 import org.com.epicawaken_grappling_hook.network.StartGrapplingHookFovPacket;
 import org.com.epicawaken_grappling_hook.network.StopGrapplingHookFovPacket;
 import org.com.epicawaken_grappling_hook.network.SyncGrapplingHookArrivalPacket;
+import org.com.epicawaken_grappling_hook.network.SyncGrapplingHookMissedPacket;
+import org.com.epicawaken_grappling_hook.util.AirHookArrivalJumpTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookArrivalTracker;
-import org.com.epicawaken_grappling_hook.util.GrapplingHookForwardInputTracker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 import org.com.epicawaken_grappling_hook.util.GroundHookSlideTracker;
 import org.jetbrains.annotations.NotNull;
@@ -43,7 +47,8 @@ public class GrapplingHook extends AbstractArrow {
     private static final double TERRAIN_PULL_VERTICAL_ARRIVAL_DISTANCE = 0.45D;
     private static final double TERRAIN_PULL_OVERSHOOT_DISTANCE = 0.75D;
     private static final double WALL_TARGET_SURFACE_GAP = 0.0D;
-    private static final double AIR_ARRIVAL_FORWARD_BOOST_Y_MULTIPLIER = 2.0D;
+    private static final double[] COLLISION_FREE_TARGET_VERTICAL_OFFSETS = {0.0D, 0.25D, 0.5D, 1.0D, -0.25D};
+    private static final int MISSED_HOOK_MIN_VISUAL_RETRACT_TICKS = 18;
 
     private int life;
     private boolean hooked;
@@ -54,6 +59,7 @@ public class GrapplingHook extends AbstractArrow {
     private Vec3 lastTerrainPullVelocity;
     private boolean terrainPullArrived;
     private boolean fovEffectActive;
+    private int missedHookAnimationStartLife = -1;
     private double previousTerrainTargetDistance = Double.MAX_VALUE;
 
     public GrapplingHook(EntityType<? extends AbstractArrow> entityType, Level level) {
@@ -77,7 +83,8 @@ public class GrapplingHook extends AbstractArrow {
         this.setNoGravity(true);
 
         int lockDelayTicks = Config.getHookLockDelayTicks();
-        int maxLifeTicks = Math.max(Config.maxLifeTicks, lockDelayTicks + 10);
+        int missedHookVisualTicks = Math.max(Config.missedHookGroundAnimationDurationTicks, MISSED_HOOK_MIN_VISUAL_RETRACT_TICKS);
+        int maxLifeTicks = Math.max(Config.maxLifeTicks, lockDelayTicks + missedHookVisualTicks + 2);
         Entity owner = this.getOwner();
         if (++this.life > maxLifeTicks || owner == null) {
             this.discardHook();
@@ -94,6 +101,10 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         if (this.life == lockDelayTicks) {
+            if (!this.hooked) {
+                this.startMissedHookGroundAnimation(owner, lockDelayTicks);
+                return;
+            }
             this.lockHookType();
         }
 
@@ -105,7 +116,69 @@ public class GrapplingHook extends AbstractArrow {
             case ENTITY -> this.tickEntityHook(lockDelayTicks);
             case AIR -> this.tickAirHook(lockDelayTicks);
             case GROUND -> this.tickGroundHook(lockDelayTicks);
+            case MISSED -> this.tickMissedHook(lockDelayTicks);
         }
+    }
+
+    private void startMissedHookGroundAnimation(Entity owner, int lockDelayTicks) {
+        this.hooked = true;
+        this.hookType = HookType.MISSED;
+        this.missedHookAnimationStartLife = this.life;
+        this.setDeltaMovement(Vec3.ZERO);
+        GrapplingHookMissedTracker.markMissed(owner);
+        if (!this.level().isClientSide) {
+            ModNetwork.CHANNEL.send(PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> owner), new SyncGrapplingHookMissedPacket(owner.getId()));
+        }
+        this.blockMissedHookForwardMovement(owner);
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] started missed hook cleanup owner={} hookLife={} lockDelayTicks={} cleanupTicks={} hookPos={} ownerPos={} hookVelocity={} ownerVelocity={}",
+                    owner.getId(),
+                    this.life,
+                    lockDelayTicks,
+                    Config.missedHookGroundAnimationDurationTicks,
+                    this.position(),
+                    owner.position(),
+                    this.getDeltaMovement(),
+                    owner.getDeltaMovement());
+        }
+    }
+
+    private void tickMissedHook(int lockDelayTicks) {
+        Entity owner = this.getOwner();
+        this.blockMissedHookForwardMovement(owner);
+        int elapsedTicks = this.missedHookAnimationStartLife >= 0 ? this.life - this.missedHookAnimationStartLife : this.life - lockDelayTicks;
+        int cleanupTicks = Math.max(Config.missedHookGroundAnimationDurationTicks, MISSED_HOOK_MIN_VISUAL_RETRACT_TICKS);
+        if (elapsedTicks >= cleanupTicks) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] cleaned up missed hook projectile owner={} hookLife={} elapsedTicks={} cleanupTicks={} hookPos={} ownerPos={}",
+                        owner != null ? owner.getId() : -1,
+                        this.life,
+                        elapsedTicks,
+                        cleanupTicks,
+                        this.position(),
+                        owner != null ? owner.position() : null);
+            }
+            this.discardHook();
+        }
+    }
+
+    private void blockMissedHookForwardMovement(Entity owner) {
+        if (owner == null) {
+            return;
+        }
+
+        Vec3 velocity = owner.getDeltaMovement();
+        Vec3 forward = horizontalLookDirection(owner);
+        double forwardSpeed = velocity.x * forward.x + velocity.z * forward.z;
+        if (forwardSpeed <= 0.0D) {
+            return;
+        }
+
+        owner.setDeltaMovement(
+                velocity.x - forward.x * forwardSpeed,
+                velocity.y,
+                velocity.z - forward.z * forwardSpeed);
+        owner.hurtMarked = true;
     }
 
     private void lockHookType() {
@@ -122,10 +195,25 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         if (this.hookType != HookType.ENTITY) {
+            HookType previousHookType = this.hookType;
             Vec3 hookVec = this.position().subtract(owner.getEyePosition());
             double deltaY = this.getY() - (owner.getY() + owner.getEyeHeight());
             double angleDeg = Math.toDegrees(Math.asin(hookVec.normalize().y));
             this.hookType = angleDeg >= AIR_HOOK_MIN_ANGLE_DEGREES && deltaY > AIR_HOOK_MIN_HEIGHT_ABOVE_EYES ? HookType.AIR : HookType.GROUND;
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] hook type locked owner={} previousHookType={} finalHookType={} angleDeg={} minAirAngle={} deltaY={} minAirDeltaY={} hookPos={} ownerEye={} terrainTarget={} hookVec={}",
+                        owner.getId(),
+                        previousHookType,
+                        this.hookType,
+                        angleDeg,
+                        AIR_HOOK_MIN_ANGLE_DEGREES,
+                        deltaY,
+                        AIR_HOOK_MIN_HEIGHT_ABOVE_EYES,
+                        this.position(),
+                        owner.getEyePosition(),
+                        this.terrainTarget,
+                        hookVec);
+            }
         }
     }
 
@@ -534,7 +622,7 @@ public class GrapplingHook extends AbstractArrow {
     private void markTerrainPullArrived(Entity owner) {
         this.terrainPullArrived = true;
         this.stopOwnerTerrainPull(owner, this.terrainTarget);
-        this.applyAirArrivalForwardBoost(owner, "mark_arrived");
+        this.openAirArrivalJumpWindow(owner, "mark_arrived");
         if (Config.debugLogging) {
             Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] markTerrainPullArrived hookType={} hookLife={} owner={} ownerPos={} target={}",
                     this.hookType,
@@ -557,7 +645,7 @@ public class GrapplingHook extends AbstractArrow {
 
         this.stopOwnerTerrainPull(owner, this.terrainTarget);
         if (allowArrivalBoost) {
-            this.applyAirArrivalForwardBoost(owner, "finish_pull");
+            this.openAirArrivalJumpWindow(owner, "finish_pull");
         }
 
         this.syncTerrainPullArrival(owner);
@@ -568,77 +656,23 @@ public class GrapplingHook extends AbstractArrow {
         owner.hurtMarked = true;
     }
 
-    private void applyAirArrivalForwardBoost(Entity owner, String reason) {
-        if (!Config.airHookArrivalForwardBoostEnabled
-                || this.hookType != HookType.AIR
-                || !(owner instanceof ServerPlayer serverPlayer)
-                || !GrapplingHookForwardInputTracker.isForwardDown(serverPlayer, Config.airHookArrivalForwardBoostInputGraceTicks)) {
+    private void openAirArrivalJumpWindow(Entity owner, String reason) {
+        if (!Config.airHookArrivalJumpEnabled || this.hookType != HookType.AIR || owner == null) {
             return;
         }
 
-        Vec3 direction = this.airArrivalForwardBoostDirection(owner);
-        if (direction.lengthSqr() <= 1.0E-6D) {
-            if (Config.debugLogging) {
-                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookBoostDebug][SERVER] skipped air arrival boost owner={} hookLife={} reason={} direction={} terrainTarget={} lastPullVelocity={}",
-                        owner.getId(),
-                        this.life,
-                        reason,
-                        direction,
-                        this.terrainTarget,
-                        this.lastTerrainPullVelocity);
-            }
-            return;
-        }
-
-        double speed = this.airArrivalForwardBoostSpeed(owner);
-        Vec3 boost = direction.normalize().scale(speed);
-        boost = new Vec3(boost.x, boost.y * AIR_ARRIVAL_FORWARD_BOOST_Y_MULTIPLIER, boost.z);
-        Vec3 oldVelocity = owner.getDeltaMovement();
-        owner.setDeltaMovement(boost);
-        owner.fallDistance = 0.0F;
-        owner.hurtMarked = true;
-        GrapplingHookParcoolBlocker.block(owner, 4);
+        AirHookArrivalJumpTracker.openWindow(owner);
         if (Config.debugLogging) {
-            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookBoostDebug][SERVER] applied air arrival boost owner={} hookLife={} reason={} speed={} yMultiplier={} boost={} oldVelocity={} newVelocity={} terrainTarget={} lastPullVelocity={}",
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookArrivalJumpDebug][SERVER] opened air arrival jump window owner={} hookLife={} reason={} windowTicks={} initialSpeed={} terrainTarget={} lastPullVelocity={} ownerVelocity={}",
                     owner.getId(),
                     this.life,
                     reason,
-                    speed,
-                    AIR_ARRIVAL_FORWARD_BOOST_Y_MULTIPLIER,
-                    boost,
-                    oldVelocity,
-                    owner.getDeltaMovement(),
+                    Config.airHookArrivalJumpWindowTicks,
+                    Config.airHookArrivalJumpInitialSpeed,
                     this.terrainTarget,
-                    this.lastTerrainPullVelocity);
+                    this.lastTerrainPullVelocity,
+                    owner.getDeltaMovement());
         }
-    }
-
-    private Vec3 airArrivalForwardBoostDirection(Entity owner) {
-        if (this.lastTerrainPullVelocity != null && this.lastTerrainPullVelocity.lengthSqr() > 1.0E-6D) {
-            return this.lastTerrainPullVelocity.normalize();
-        }
-        if (this.terrainTarget != null) {
-            Vec3 toTarget = this.terrainTarget.subtract(owner.position());
-            if (toTarget.lengthSqr() > 1.0E-6D) {
-                return toTarget.normalize();
-            }
-        }
-        Vec3 toHook = this.position().subtract(owner.position());
-        if (toHook.lengthSqr() > 1.0E-6D) {
-            return toHook.normalize();
-        }
-        return Vec3.ZERO;
-    }
-
-    private double airArrivalForwardBoostSpeed(Entity owner) {
-        if (this.lastTerrainPullVelocity != null && this.lastTerrainPullVelocity.lengthSqr() > 1.0E-6D) {
-            return this.lastTerrainPullVelocity.length();
-        }
-        Vec3 currentVelocity = owner.getDeltaMovement();
-        if (currentVelocity.lengthSqr() > 1.0E-6D) {
-            return currentVelocity.length();
-        }
-        return Config.airHookArrivalForwardBoostStrength;
     }
 
     private double getTargetPullMinSpeed() {
@@ -689,6 +723,25 @@ public class GrapplingHook extends AbstractArrow {
         this.hooked = true;
         this.hookType = HookType.GROUND;
         this.terrainTarget = this.findSafeTerrainTarget(result);
+        if (Config.debugLogging) {
+            Entity owner = this.getOwner();
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] block hit owner={} direction={} horizontalFace={} hit={} block={} projectilePos={} ownerPos={} ownerYaw={} ownerLook={} terrainTarget={} retargetEnabled={} adaptiveEnabled={} allowedAngleWidthDegrees={} halfAngleDegrees={} requiredDot={}",
+                    owner != null ? owner.getId() : -1,
+                    result.getDirection(),
+                    isHorizontalWallFace(result.getDirection()),
+                    result.getLocation(),
+                    result.getBlockPos(),
+                    this.position(),
+                    owner != null ? owner.position() : null,
+                    owner != null ? owner.getYRot() : null,
+                    owner != null ? horizontalLookDirection(owner) : null,
+                    this.terrainTarget,
+                    Config.wallHookFacingRetargetEnabled,
+                    Config.wallHookFacingRetargetAdaptiveEnabled,
+                    Config.wallHookFacingRetargetAngleWidthDegrees,
+                    Config.wallHookFacingRetargetHalfAngleDegrees,
+                    Config.wallHookFacingRetargetDot);
+        }
         Vec3 vec3 = result.getLocation().subtract(this.getX(), this.getY(), this.getZ());
         this.setDeltaMovement(vec3);
         Vec3 vec31 = vec3.normalize().scale(0.05F);
@@ -699,20 +752,233 @@ public class GrapplingHook extends AbstractArrow {
     private Vec3 findSafeTerrainTarget(BlockHitResult result) {
         Entity owner = this.getOwner();
         if (owner == null) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] using raw hit target reason=no_owner hit={}",
+                        result.getLocation());
+            }
             return result.getLocation();
         }
 
+        Vec3 retarget = this.getFacingWallRetarget(result, owner);
+        if (retarget != null) {
+            return retarget;
+        }
+
         Vec3 target = this.getRawTerrainTarget(result, owner);
+        Vec3 safeTarget = this.findCollisionFreeTarget(owner, target);
+        if (safeTarget != null) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] using normal terrain safe target owner={} rawTarget={} safeTarget={} direction={} hit={}",
+                        owner.getId(),
+                        target,
+                        safeTarget,
+                        result.getDirection(),
+                        result.getLocation());
+            }
+            return safeTarget;
+        }
+
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] using normal terrain raw target owner={} rawTarget={} direction={} hit={} reason=no_collision_free_candidate",
+                    owner.getId(),
+                    target,
+                    result.getDirection(),
+                    result.getLocation());
+        }
+        return target;
+    }
+
+    private Vec3 findCollisionFreeTarget(Entity owner, Vec3 target) {
         Vec3 ownerPosition = owner.position();
-        double[] verticalOffsets = {0.0D, 0.25D, 0.5D, 1.0D, -0.25D};
-        for (double verticalOffset : verticalOffsets) {
+        Vec3 targetOffset = target.subtract(ownerPosition);
+        AABB ownerBox = owner.getBoundingBox();
+        Level level = this.level();
+
+        for (double verticalOffset : COLLISION_FREE_TARGET_VERTICAL_OFFSETS) {
             Vec3 candidate = target.add(0.0D, verticalOffset, 0.0D);
-            if (this.level().noCollision(owner, owner.getBoundingBox().move(candidate.subtract(ownerPosition)))) {
+            if (level.noCollision(owner, ownerBox.move(targetOffset.add(0.0D, verticalOffset, 0.0D)))) {
                 return candidate;
             }
         }
 
-        return target;
+        return null;
+    }
+
+    private Vec3 getFacingWallRetarget(BlockHitResult result, Entity owner) {
+        Direction hitDirection = result.getDirection();
+        if (!Config.wallHookFacingRetargetEnabled) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] skipped wall retarget owner={} reason=disabled direction={} hit={} ownerYaw={}",
+                        owner.getId(),
+                        hitDirection,
+                        result.getLocation(),
+                        owner.getYRot());
+            }
+            return null;
+        }
+        if (!isHorizontalWallFace(hitDirection)) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] skipped wall retarget owner={} reason=not_horizontal_wall_face direction={} hit={} ownerYaw={}",
+                        owner.getId(),
+                        hitDirection,
+                        result.getLocation(),
+                        owner.getYRot());
+            }
+            return null;
+        }
+
+        Vec3 normal = Vec3.atLowerCornerOf(hitDirection.getNormal());
+        Vec3 look = horizontalLookDirection(owner);
+        if (look.lengthSqr() <= 1.0E-6D) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] skipped wall retarget owner={} reason=no_horizontal_look direction={} hit={} ownerYaw={} look={}",
+                        owner.getId(),
+                        hitDirection,
+                        result.getLocation(),
+                        owner.getYRot(),
+                        look);
+            }
+            return null;
+        }
+
+        double facingDot = -look.dot(normal);
+        if (facingDot < Config.wallHookFacingRetargetDot) {
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] skipped wall retarget owner={} direction={} facingDot={} requiredDot={} allowedAngleWidthDegrees={} halfAngleDegrees={} ownerYaw={} hit={} ownerPos={}",
+                        owner.getId(),
+                        hitDirection,
+                        facingDot,
+                        Config.wallHookFacingRetargetDot,
+                        Config.wallHookFacingRetargetAngleWidthDegrees,
+                        Config.wallHookFacingRetargetHalfAngleDegrees,
+                        owner.getYRot(),
+                        result.getLocation(),
+                        owner.position());
+            }
+            return null;
+        }
+
+        Vec3 base = result.getLocation().add(normal.scale(Config.wallHookFacingRetargetForwardOffset));
+        String retargetSource = "adaptive";
+        Vec3 retarget = Config.wallHookFacingRetargetAdaptiveEnabled
+                ? this.findAdaptiveFacingWallRetarget(owner, base, result, facingDot)
+                : null;
+        if (retarget == null) {
+            retargetSource = Config.wallHookFacingRetargetAdaptiveEnabled ? "fallback_after_adaptive" : "fallback_adaptive_disabled";
+            Vec3 fallback = base.add(0.0D, Config.wallHookFacingRetargetUpOffset, 0.0D);
+            retarget = this.findCollisionFreeTarget(owner, fallback);
+            if (retarget == null) {
+                if (Config.debugLogging) {
+                    Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] wall retarget fallback failed owner={} direction={} facingDot={} fallback={} base={} source={} reason=no_collision_free_candidate ownerPos={}",
+                            owner.getId(),
+                            hitDirection,
+                            facingDot,
+                            fallback,
+                            base,
+                            retargetSource,
+                            owner.position());
+                }
+                return null;
+            }
+        }
+
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] applied wall retarget owner={} direction={} facingDot={} requiredDot={} allowedAngleWidthDegrees={} halfAngleDegrees={} hit={} base={} retarget={} source={} upOffset={} forwardOffset={} ownerPos={} ownerVelocity={}",
+                    owner.getId(),
+                    hitDirection,
+                    facingDot,
+                    Config.wallHookFacingRetargetDot,
+                    Config.wallHookFacingRetargetAngleWidthDegrees,
+                    Config.wallHookFacingRetargetHalfAngleDegrees,
+                    result.getLocation(),
+                    base,
+                    retarget,
+                    retargetSource,
+                    Config.wallHookFacingRetargetUpOffset,
+                    Config.wallHookFacingRetargetForwardOffset,
+                    owner.position(),
+                    owner.getDeltaMovement());
+        }
+        return retarget;
+    }
+
+    private Vec3 findAdaptiveFacingWallRetarget(Entity owner, Vec3 base, BlockHitResult result, double facingDot) {
+        double minOffset = Math.min(Config.wallHookFacingRetargetMinUpOffset, Config.wallHookFacingRetargetUpOffset);
+        double maxOffset = Math.max(Config.wallHookFacingRetargetMinUpOffset, Config.wallHookFacingRetargetUpOffset);
+        double step = Math.max(0.05D, Config.wallHookFacingRetargetSearchStep);
+
+        for (double upOffset = minOffset; upOffset <= maxOffset + 1.0E-6D; upOffset += step) {
+            Vec3 target = base.add(0.0D, upOffset, 0.0D);
+            if (!this.hasWallTopClearance(result, target)) {
+                if (Config.debugLogging) {
+                    Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive candidate rejected owner={} reason=no_wall_top_clearance direction={} facingDot={} hit={} target={} upOffset={}",
+                            owner.getId(),
+                            result.getDirection(),
+                            facingDot,
+                            result.getLocation(),
+                            target,
+                            upOffset);
+                }
+                continue;
+            }
+
+            Vec3 candidate = this.findCollisionFreeTarget(owner, target);
+            if (candidate != null) {
+                if (Config.debugLogging) {
+                    Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive wall retarget found owner={} direction={} facingDot={} hit={} candidate={} upOffset={} minOffset={} maxOffset={} step={} ownerPos={}",
+                            owner.getId(),
+                            result.getDirection(),
+                            facingDot,
+                            result.getLocation(),
+                            candidate,
+                            upOffset,
+                            minOffset,
+                            maxOffset,
+                            step,
+                            owner.position());
+                }
+                return candidate;
+            }
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive candidate rejected owner={} reason=no_collision_free_candidate direction={} facingDot={} hit={} target={} upOffset={} ownerPos={}",
+                        owner.getId(),
+                        result.getDirection(),
+                        facingDot,
+                        result.getLocation(),
+                        target,
+                        upOffset,
+                        owner.position());
+            }
+        }
+
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive wall retarget not found owner={} direction={} facingDot={} hit={} minOffset={} maxOffset={} step={} ownerPos={}",
+                    owner.getId(),
+                    result.getDirection(),
+                    facingDot,
+                    result.getLocation(),
+                    minOffset,
+                    maxOffset,
+                    step,
+                    owner.position());
+        }
+        return null;
+    }
+
+    private boolean hasWallTopClearance(BlockHitResult result, Vec3 target) {
+        BlockPos hitBlock = result.getBlockPos();
+        int targetBlockY = Mth.floor(target.y);
+        int yOffset = targetBlockY - hitBlock.getY();
+        if (yOffset < 0) {
+            return false;
+        }
+
+        BlockPos wallColumnAtFeet = hitBlock.above(yOffset);
+        BlockPos supportBelow = wallColumnAtFeet.below();
+        Level level = this.level();
+        boolean feetSpaceClear = level.getBlockState(wallColumnAtFeet).getCollisionShape(level, wallColumnAtFeet).isEmpty();
+        boolean supportExists = !level.getBlockState(supportBelow).getCollisionShape(level, supportBelow).isEmpty();
+        return feetSpaceClear && supportExists;
     }
 
     private Vec3 getRawTerrainTarget(BlockHitResult result, Entity owner) {
@@ -730,6 +996,14 @@ public class GrapplingHook extends AbstractArrow {
 
         double wallOffset = owner.getBbWidth() * 0.5D + WALL_TARGET_SURFACE_GAP;
         return hit.add(normal.scale(wallOffset)).add(0.0D, -owner.getEyeHeight(), 0.0D);
+    }
+
+    private static boolean isHorizontalWallFace(Direction direction) {
+        return direction.getAxis().isHorizontal();
+    }
+
+    private static Vec3 horizontalLookDirection(Entity entity) {
+        return Vec3.directionFromRotation(0.0F, entity.getYRot());
     }
 
     public HookType getHookType() {
@@ -755,6 +1029,8 @@ public class GrapplingHook extends AbstractArrow {
     public enum HookType {
         AIR,
         GROUND,
-        ENTITY
+        ENTITY,
+        MISSED
     }
+
 }

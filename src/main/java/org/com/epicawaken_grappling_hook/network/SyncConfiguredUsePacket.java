@@ -7,6 +7,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookUseTracker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 
 public class SyncConfiguredUsePacket {
@@ -31,6 +32,7 @@ public class SyncConfiguredUsePacket {
                 ClientGrapplingHookUseTracker.markConfiguredUse(packet.entityId);
                 if (Minecraft.getInstance().level != null) {
                     Entity entity = Minecraft.getInstance().level.getEntity(packet.entityId);
+                    GrapplingHookMissedTracker.clearMissed(entity);
                     GrapplingHookParcoolBlocker.block(entity, Config.maxLifeTicks + Config.getHookLockDelayTicks() + 20);
                 }
             }

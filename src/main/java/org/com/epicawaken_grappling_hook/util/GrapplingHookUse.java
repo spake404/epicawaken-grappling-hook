@@ -38,6 +38,7 @@ public class GrapplingHookUse {
         }
 
         GrapplingHookParcoolBlocker.block(player, Config.maxLifeTicks + Config.getHookLockDelayTicks() + 20);
+        GrapplingHookMissedTracker.clearMissed(player);
         markConfiguredUse(player);
         ServerPlayerPatch playerPatch = EpicFightCapabilities.getEntityPatch(player, ServerPlayerPatch.class);
         if (playerPatch != null) {

@@ -17,6 +17,7 @@ public enum GrapplingHookFovType {
             case AIR -> AIR;
             case GROUND -> GROUND;
             case ENTITY -> ENTITY;
+            case MISSED -> UNKNOWN;
         };
     }
 

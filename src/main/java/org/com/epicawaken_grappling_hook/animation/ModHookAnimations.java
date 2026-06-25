@@ -7,13 +7,20 @@ import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
 import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHook;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookArrivalTracker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookUse;
+import yesman.epicfight.api.animation.AnimationPlayer;
 import yesman.epicfight.api.animation.AnimationManager;
+import yesman.epicfight.api.asset.AssetAccessor;
 import yesman.epicfight.api.animation.property.AnimationEvent;
 import yesman.epicfight.api.animation.property.AnimationProperty;
 import yesman.epicfight.api.animation.types.ActionAnimation;
+import yesman.epicfight.api.animation.types.DynamicAnimation;
 import yesman.epicfight.api.animation.types.EntityState;
 import yesman.epicfight.api.animation.types.StaticAnimation;
 import yesman.epicfight.gameasset.Armatures;
+import yesman.epicfight.api.model.Armature;
+import yesman.epicfight.world.capabilities.entitypatch.LivingEntityPatch;
 import yesman.epicfight.world.capabilities.entitypatch.player.PlayerPatch;
 
 public class ModHookAnimations {
@@ -25,6 +32,13 @@ public class ModHookAnimations {
     public static final float HOOK_PULL_MOVEMENT_INTERRUPT_AT = 1.0F;
     public static final float HOOK_AIR_MOVEMENT_INTERRUPT_AT = 0.9F;
     public static final float HOOK_GROUND_MOVEMENT_INTERRUPT_AT = 0.9F;
+    private static final float HOOK_PULL_FALLBACK_TOTAL_SECONDS = 2.1667F;
+    private static final float HOOK_PULL_SLOW_SEGMENT_START_RATIO = 0.30F;
+    private static final float HOOK_PULL_SLOW_SEGMENT_SPEED_MULTIPLIER = 0.45F;
+    private static final float HOOK_PULL_RECOVERY_SEGMENT_START_AT = 0.9F;
+    private static final float HOOK_PULL_RECOVERY_SEGMENT_SPEED_MULTIPLIER = 1.5F;
+    private static long nextHookPullSpeedClientDebugLogTick;
+    private static long nextHookPullSpeedServerDebugLogTick;
 
     public static void registerAnimations(AnimationManager.AnimationRegistryEvent event) {
         event.newBuilder(Epicawaken_grappling_hook.MODID, ModHookAnimations::build);
@@ -33,7 +47,7 @@ public class ModHookAnimations {
     private static void build(AnimationManager.AnimationBuilder builder) {
         HOOK_PULL = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_pull",
                 accessor -> limitMovementLock(
-                        new ActionAnimation(0.15F, accessor, Armatures.BIPED)
+                        new HookPullActionAnimation(0.15F, accessor, Armatures.BIPED)
                                 .newTimePair(0.05F, Float.MAX_VALUE)
                                 .addStateRemoveOld(EntityState.TURNING_LOCKED, true)
                                 .newTimePair(0.0F, 1.0F)
@@ -95,6 +109,93 @@ public class ModHookAnimations {
         animation.addConditionalState(1, EntityState.UPDATE_LIVING_MOTION, true);
         animation.addConditionalState(1, EntityState.INACTION, false);
         return animation;
+    }
+
+    private static float modifyHookPullSpeed(DynamicAnimation self, LivingEntityPatch<?> entityPatch, float speed) {
+        boolean activeConfiguredUse = GrapplingHookUse.hasActiveConfiguredUse(entityPatch.getOriginal());
+        boolean missedHook = GrapplingHookMissedTracker.hasMissed(entityPatch.getOriginal());
+        float totalTime = self.getTotalTime();
+        AnimationPlayer animationPlayer = entityPatch.getAnimator().getPlayerFor(self.getAccessor());
+        float prevElapsedTime = animationPlayer.getPrevElapsedTime();
+        float elapsedTime = animationPlayer.getElapsedTime();
+        float phaseMultiplier = missedHook ? getHookPullPhaseSpeedMultiplier(totalTime, elapsedTime) : 1.0F;
+        boolean slowSegment = phaseMultiplier == HOOK_PULL_SLOW_SEGMENT_SPEED_MULTIPLIER;
+
+        float modifiedSpeed = speed * (float) Config.hookPullAnimationSpeed;
+        modifiedSpeed *= phaseMultiplier;
+        logHookPullSpeedDebug(entityPatch, self, speed, modifiedSpeed, phaseMultiplier, prevElapsedTime, elapsedTime, totalTime, activeConfiguredUse, missedHook, slowSegment);
+        return modifiedSpeed;
+    }
+
+    private static float getHookPullPhaseSpeedMultiplier(float totalTime, float elapsedTime) {
+        float animationTotalTime = totalTime > 0.0F ? totalTime : HOOK_PULL_FALLBACK_TOTAL_SECONDS;
+        float slowSegmentStart = animationTotalTime * HOOK_PULL_SLOW_SEGMENT_START_RATIO;
+        if (elapsedTime >= HOOK_PULL_RECOVERY_SEGMENT_START_AT) {
+            return HOOK_PULL_RECOVERY_SEGMENT_SPEED_MULTIPLIER;
+        }
+        if (elapsedTime >= slowSegmentStart) {
+            return HOOK_PULL_SLOW_SEGMENT_SPEED_MULTIPLIER;
+        }
+        return 1.0F;
+    }
+
+    private static void logHookPullSpeedDebug(
+            LivingEntityPatch<?> entityPatch,
+            DynamicAnimation self,
+            float baseSpeed,
+            float finalSpeed,
+            float phaseMultiplier,
+            float prevElapsedTime,
+            float elapsedTime,
+            float totalTime,
+            boolean activeConfiguredUse,
+            boolean missedHook,
+            boolean slowSegment) {
+        if (!Config.debugLogging) {
+            return;
+        }
+
+        long gameTime = entityPatch.getOriginal().level().getGameTime();
+        boolean clientSide = entityPatch.getOriginal().level().isClientSide;
+        long nextLogTick = clientSide ? nextHookPullSpeedClientDebugLogTick : nextHookPullSpeedServerDebugLogTick;
+        if (gameTime < nextLogTick) {
+            return;
+        }
+
+        if (clientSide) {
+            nextHookPullSpeedClientDebugLogTick = gameTime + 5L;
+        } else {
+            nextHookPullSpeedServerDebugLogTick = gameTime + 5L;
+        }
+        Epicawaken_grappling_hook.LOGGER.info(
+                "[GrapplingHookSpeedDebug][{}] hook_pull speed modifier owner={} gameTime={} animation={} activeUse={} missedHook={} prevElapsed={} elapsed={} total={} threshold={} recoveryAt={} slowSegment={} baseSpeed={} configSpeed={} phaseMultiplier={} finalSpeed={}",
+                clientSide ? "CLIENT" : "SERVER",
+                entityPatch.getOriginal().getId(),
+                gameTime,
+                self.getRegistryName(),
+                activeConfiguredUse,
+                missedHook,
+                prevElapsedTime,
+                elapsedTime,
+                totalTime,
+                (totalTime > 0.0F ? totalTime : HOOK_PULL_FALLBACK_TOTAL_SECONDS) * HOOK_PULL_SLOW_SEGMENT_START_RATIO,
+                HOOK_PULL_RECOVERY_SEGMENT_START_AT,
+                slowSegment,
+                baseSpeed,
+                Config.hookPullAnimationSpeed,
+                phaseMultiplier,
+                finalSpeed);
+    }
+
+    private static class HookPullActionAnimation extends ActionAnimation {
+        private HookPullActionAnimation(float transitionTime, AnimationManager.AnimationAccessor<? extends ActionAnimation> accessor, AssetAccessor<? extends Armature> armature) {
+            super(transitionTime, accessor, armature);
+        }
+
+        @Override
+        public float getPlaySpeed(LivingEntityPatch<?> entityPatch, DynamicAnimation animation) {
+            return modifyHookPullSpeed(this, entityPatch, super.getPlaySpeed(entityPatch, animation));
+        }
     }
 
     private ModHookAnimations() {

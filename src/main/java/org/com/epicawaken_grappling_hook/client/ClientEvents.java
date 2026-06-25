@@ -15,7 +15,6 @@ import net.minecraftforge.client.event.ComputeFovModifierEvent;
 import net.minecraftforge.client.event.ModelEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
-import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -55,9 +54,6 @@ public class ClientEvents {
         @SubscribeEvent
         public static void registerKeys(RegisterKeyMappingsEvent event) {
             event.register(USE_GRAPPLING_HOOK);
-            GrapplingHookRenderDebugControls.register(event);
-            ClientSlowMotionDebugControls.register(event);
-            GrapplingHookLineDebugControls.register(event);
         }
 
         @SubscribeEvent
@@ -93,10 +89,7 @@ public class ClientEvents {
             if (event.phase != TickEvent.Phase.END) {
                 return;
             }
-            GrapplingHookRenderDebugControls.tick();
-            ClientSlowMotionDebugControls.tick();
-            GrapplingHookLineDebugControls.tick();
-            ClientGrapplingHookForwardInputSync.tick();
+            ClientGrapplingHookJumpInputSync.tick();
             while (USE_GRAPPLING_HOOK.consumeClick()) {
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
                 ClientGrapplingHookSprintRestore.recordUseAttempt();
@@ -117,12 +110,6 @@ public class ClientEvents {
         @SubscribeEvent(priority = EventPriority.LOWEST)
         public static void onComputeFovModifier(ComputeFovModifierEvent event) {
             ClientGrapplingHookFovEffect.onComputeFovModifier(event);
-        }
-
-        @SubscribeEvent
-        public static void onKeyInput(InputEvent.Key event) {
-            ClientSlowMotionDebugControls.onKeyInput(event.getKey(), event.getAction());
-            GrapplingHookLineDebugControls.onKeyInput(event.getKey(), event.getAction());
         }
 
         @SubscribeEvent
@@ -206,6 +193,7 @@ public class ClientEvents {
                         Mth.lerp(partialTicks, grapplingHook.xo, grapplingHook.getX()),
                         Mth.lerp(partialTicks, grapplingHook.yo, grapplingHook.getY()),
                         Mth.lerp(partialTicks, grapplingHook.zo, grapplingHook.getZ()));
+                hookPos = ClientMissedHookRopeRetractTracker.getVisualRopeOrigin(grapplingHook, player, playerPatch, hookPos, handPos);
                 renderWorldRope(hookPos, handPos, cameraPos, poseStack, bufferSource);
                 if (player == minecraft.player) {
                     renderedLocalPlayerRope = true;
