@@ -6,12 +6,15 @@ import com.mojang.math.Axis;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.lwjgl.glfw.GLFW;
 import yesman.epicfight.api.animation.AnimationPlayer;
 import yesman.epicfight.api.asset.AssetAccessor;
+import yesman.epicfight.world.capabilities.EpicFightCapabilities;
 import yesman.epicfight.world.capabilities.entitypatch.LivingEntityPatch;
 
 import java.util.Locale;
@@ -25,8 +28,9 @@ public final class GrapplingHookRenderDebugControls {
     private static final Transform DEFAULT_PULL_TRANSFORM = new Transform(-0.60F, 0.50F, 0.250F, 0.0F, 0.0F, -180.0F, 0.50F);
     private static final Transform EPIC_FIGHT_NORMAL_TRANSFORM = new Transform(0.675F, 0.325F, -0.175F, 185.0F, 0.0F, 0.0F, 0.52F);
     private static final Transform EPIC_FIGHT_PULL_TRANSFORM = new Transform(0.675F, 0.325F, -0.175F, 185.0F, 0.0F, 0.0F, 0.52F);
-    private static final Transform ROPE_HAND_TRANSFORM = new Transform(0.0F, 0.125F, -0.225F, 0.0F, 0.0F, 0.0F, 1.0F);
+    private static final Transform ROPE_HAND_TRANSFORM = new Transform(0.0F, 0.125F, -0.175F, 0.0F, 0.0F, 0.0F, 1.0F);
     private static final Transform ROPE_GROUND_AIR_TRANSFORM = new Transform(0.0F, 0.325F, -0.225F, 0.0F, 0.0F, 0.0F, 1.0F);
+    private static final Transform ROPE_MISSED_P2_TRANSFORM = new Transform(0.0F, 0.575F, -0.175F, 0.0F, 0.0F, 0.0F, 1.0F);
     private static final Transform PROJECTILE_ARROW_TRANSFORM = new Transform(-0.325F, 0.425F, -0.425F, -90.0F, -5.0F, 90.0F, 0.84F);
 
     private static final KeyMapping TOGGLE_MODEL = key("toggle_model", GLFW.GLFW_KEY_KP_ADD);
@@ -94,6 +98,29 @@ public final class GrapplingHookRenderDebugControls {
         return modelMode == ModelMode.PULL;
     }
 
+    public static boolean shouldUsePullModel(LivingEntity entity) {
+        return isPullModelForced() || hasActiveMissedPullAnimation(entity);
+    }
+
+    private static boolean hasActiveMissedPullAnimation(LivingEntity entity) {
+        if (!GrapplingHookMissedTracker.hasMissed(entity)) {
+            return false;
+        }
+
+        LivingEntityPatch<?> entityPatch = EpicFightCapabilities.getEntityPatch(entity, LivingEntityPatch.class);
+        if (entityPatch == null) {
+            return false;
+        }
+
+        AnimationPlayer animationPlayer = entityPatch.getAnimator().getPlayerFor(null);
+        if (animationPlayer == null) {
+            return false;
+        }
+
+        float elapsedTime = animationPlayer.getElapsedTime();
+        return ClientMissedHookRopeRetractTracker.isBeforeP2Arrival(entity, elapsedTime);
+    }
+
     public static void applyDefaultNormalTransform(PoseStack poseStack) {
         DEFAULT_NORMAL_TRANSFORM.apply(poseStack);
     }
@@ -125,6 +152,10 @@ public final class GrapplingHookRenderDebugControls {
         return ropeHandLocalOffset();
     }
 
+    public static Vec3 ropeMissedP2LocalOffset() {
+        return new Vec3(ROPE_MISSED_P2_TRANSFORM.x, ROPE_MISSED_P2_TRANSFORM.y, ROPE_MISSED_P2_TRANSFORM.z);
+    }
+
     private static KeyMapping key(String name, int keyCode) {
         return new KeyMapping(
                 "key.epicawaken_grappling_hook.debug." + name,
@@ -147,6 +178,9 @@ public final class GrapplingHookRenderDebugControls {
         }
         if (target == Target.ROPE_GROUND_AIR) {
             return ROPE_GROUND_AIR_TRANSFORM;
+        }
+        if (target == Target.ROPE_MISSED_P2) {
+            return ROPE_MISSED_P2_TRANSFORM;
         }
         if (target == Target.PROJECTILE_ARROW) {
             return PROJECTILE_ARROW_TRANSFORM;
@@ -201,6 +235,7 @@ public final class GrapplingHookRenderDebugControls {
         EPIC_FIGHT("EpicFight"),
         ROPE_HAND("rope_hand"),
         ROPE_GROUND_AIR("rope_ground_air"),
+        ROPE_MISSED_P2("rope_missed_p2"),
         PROJECTILE_ARROW("projectile_arrow");
 
         private final String label;
@@ -214,7 +249,8 @@ public final class GrapplingHookRenderDebugControls {
                 case DEFAULT -> EPIC_FIGHT;
                 case EPIC_FIGHT -> ROPE_HAND;
                 case ROPE_HAND -> ROPE_GROUND_AIR;
-                case ROPE_GROUND_AIR -> PROJECTILE_ARROW;
+                case ROPE_GROUND_AIR -> ROPE_MISSED_P2;
+                case ROPE_MISSED_P2 -> PROJECTILE_ARROW;
                 case PROJECTILE_ARROW -> DEFAULT;
             };
         }

@@ -53,7 +53,7 @@ public class EpicFightGrapplingHookFirstPersonLayer extends PatchedLayer<LocalPl
         MathUtils.mulStack(poseStack, poses[handJoint.getId()]);
         poseStack.translate(ARM_MOUNT_X, ARM_MOUNT_Y, ARM_MOUNT_Z);
         poseStack.scale(ARM_MOUNT_SCALE, ARM_MOUNT_SCALE, ARM_MOUNT_SCALE);
-        if (GrapplingHookRenderDebugControls.isPullModelForced()) {
+        if (GrapplingHookRenderDebugControls.shouldUsePullModel(player)) {
             GrapplingHookRenderDebugControls.applyEpicFightPullTransform(poseStack);
             GrapplingHookArmModelRenderer.render(GrapplingHookArmModelRenderer.ARM_PULL_MODEL, entry.get().stack(), poseStack, bufferSource, packedLight);
         } else {

@@ -2,11 +2,9 @@ package org.com.epicawaken_grappling_hook.network;
 
 import java.util.function.Supplier;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.client.Minecraft;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookFovEffect;
-import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookSprintRestore;
-import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 
 public class StartGrapplingHookFovPacket {
     private final GrapplingHookFovType type;
@@ -27,13 +25,8 @@ public class StartGrapplingHookFovPacket {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
             if (context.getDirection().getReceptionSide().isClient()) {
-                ClientGrapplingHookSprintRestore.onFovStarted(packet.type);
-                if (packet.type != GrapplingHookFovType.AIR) {
-                    ClientGrapplingHookFovEffect.start();
-                } else {
-                    ClientGrapplingHookFovEffect.startAirFovHold();
-                }
-                GrapplingHookParcoolBlocker.block(Minecraft.getInstance().player, 80);
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                        org.com.epicawaken_grappling_hook.client.ClientNetworkPacketHandlers.handleStartFov(packet.type));
             }
         });
         context.setPacketHandled(true);

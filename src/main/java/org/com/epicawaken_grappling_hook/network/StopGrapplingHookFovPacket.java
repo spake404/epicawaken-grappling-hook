@@ -2,12 +2,9 @@ package org.com.epicawaken_grappling_hook.network;
 
 import java.util.function.Supplier;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.client.Minecraft;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookFovEffect;
-import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookSprintRestore;
-import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookWallRunBridge;
-import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 
 public class StopGrapplingHookFovPacket {
     private final GrapplingHookFovType type;
@@ -28,13 +25,8 @@ public class StopGrapplingHookFovPacket {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
             if (context.getDirection().getReceptionSide().isClient()) {
-                ClientGrapplingHookFovEffect.stop();
-                if (packet.type == GrapplingHookFovType.AIR) {
-                    ClientGrapplingHookFovEffect.startAirFovHoldTail();
-                    ClientGrapplingHookWallRunBridge.openAirHookWindow();
-                }
-                ClientGrapplingHookSprintRestore.onFovStopped(packet.type);
-                GrapplingHookParcoolBlocker.clear(Minecraft.getInstance().player);
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                        org.com.epicawaken_grappling_hook.client.ClientNetworkPacketHandlers.handleStopFov(packet.type));
             }
         });
         context.setPacketHandled(true);

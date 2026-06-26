@@ -22,6 +22,7 @@ import org.com.epicawaken_grappling_hook.client.ClientMissedHookRopeRetractTrack
 import org.com.epicawaken_grappling_hook.client.GrapplingHookRenderDebugControls;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.jetbrains.annotations.NotNull;
 import yesman.epicfight.api.animation.AnimationPlayer;
 import yesman.epicfight.api.asset.AssetAccessor;
@@ -67,35 +68,46 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
         logRotationChange(grapplingHook, owner, partialTicks, entityYaw, entityPitch);
 
         poseStack.pushPose();
-        Vec3 visualOffset = visualHookOffset(grapplingHook, owner, partialTicks);
-        poseStack.translate(visualOffset.x, visualOffset.y, visualOffset.z);
+        if (GrapplingHookMissedTracker.hasMissed(owner)) {
+            Vec3 actualHookPos = new Vec3(
+                    Mth.lerp(partialTicks, grapplingHook.xo, grapplingHook.getX()),
+                    Mth.lerp(partialTicks, grapplingHook.yo, grapplingHook.getY()),
+                    Mth.lerp(partialTicks, grapplingHook.zo, grapplingHook.getZ()));
+            ClientMissedHookRopeRetractTracker.RopeRenderState ropeRenderState = ropeRenderState(grapplingHook, owner, partialTicks, actualHookPos);
+            if (!ropeRenderState.hookVisible()) {
+                poseStack.popPose();
+                return;
+            }
+            Vec3 visualOffset = ropeRenderState.visualHookPos().subtract(actualHookPos);
+            poseStack.translate(visualOffset.x, visualOffset.y, visualOffset.z);
+        }
         orientLikeProjectile(poseStack, renderRotation.yaw, renderRotation.pitch);
         renderProjectileModel(poseStack, bufferSource, packedLight);
         poseStack.popPose();
     }
 
-    private static Vec3 visualHookOffset(GrapplingHook grapplingHook, Player owner, float partialTicks) {
+    private static ClientMissedHookRopeRetractTracker.RopeRenderState ropeRenderState(GrapplingHook grapplingHook, Player owner, float partialTicks, Vec3 actualHookPos) {
         PlayerPatch<?> playerPatch = EpicFightCapabilities.getEntityPatch(owner, PlayerPatch.class);
         if (playerPatch == null) {
-            return Vec3.ZERO;
+            return new ClientMissedHookRopeRetractTracker.RopeRenderState(actualHookPos, Vec3.ZERO, false, true);
         }
 
         Joint handJoint = playerPatch.getArmature().searchJointByName("Hand_L");
         if (handJoint == null) {
-            return Vec3.ZERO;
+            return new ClientMissedHookRopeRetractTracker.RopeRenderState(actualHookPos, Vec3.ZERO, false, true);
         }
 
-        Vec3 actualHookPos = new Vec3(
-                Mth.lerp(partialTicks, grapplingHook.xo, grapplingHook.getX()),
-                Mth.lerp(partialTicks, grapplingHook.yo, grapplingHook.getY()),
-                Mth.lerp(partialTicks, grapplingHook.zo, grapplingHook.getZ()));
         Vec3 handPos = ArmatureUtil.getJointWorldPos(
                 playerPatch,
                 handJoint,
                 GrapplingHookRenderDebugControls.ropeHandLocalOffset(playerPatch),
                 partialTicks);
-        Vec3 visualHookPos = ClientMissedHookRopeRetractTracker.getVisualHookPos(grapplingHook, owner, playerPatch, actualHookPos, handPos);
-        return visualHookPos.subtract(actualHookPos);
+        Vec3 missedP2Pos = ArmatureUtil.getJointWorldPos(
+                playerPatch,
+                handJoint,
+                GrapplingHookRenderDebugControls.ropeMissedP2LocalOffset(),
+                partialTicks);
+        return ClientMissedHookRopeRetractTracker.getRopeRenderState(grapplingHook, owner, playerPatch, actualHookPos, handPos, missedP2Pos);
     }
 
     private static RenderRotation renderRotation(GrapplingHook grapplingHook, float entityYaw, float entityPitch) {

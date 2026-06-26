@@ -46,7 +46,7 @@ public class GrapplingHookCurioRenderer implements ICurioRenderer {
         humanoidModel.leftArm.translateAndRotate(poseStack);
         poseStack.translate(ARM_MOUNT_X, ARM_MOUNT_Y, ARM_MOUNT_Z);
         poseStack.scale(ARM_MOUNT_SCALE, ARM_MOUNT_SCALE, ARM_MOUNT_SCALE);
-        if (GrapplingHookRenderDebugControls.isPullModelForced()) {
+        if (GrapplingHookRenderDebugControls.shouldUsePullModel(slotContext.entity())) {
             GrapplingHookRenderDebugControls.applyDefaultPullTransform(poseStack);
             GrapplingHookArmModelRenderer.render(GrapplingHookArmModelRenderer.ARM_PULL_MODEL, stack, poseStack, bufferSource, packedLight);
         } else {

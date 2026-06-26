@@ -20,6 +20,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
+import org.com.epicawaken_grappling_hook.util.ParcoolCompat;
 
 @OnlyIn(Dist.CLIENT)
 public final class ClientGrapplingHookWallRunBridge {
@@ -29,6 +30,10 @@ public final class ClientGrapplingHookWallRunBridge {
     private static int remainingAirHookWindowTicks;
 
     public static void openAirHookWindow() {
+        if (!ParcoolCompat.isLoaded()) {
+            return;
+        }
+
         remainingAirHookWindowTicks = AIR_HOOK_WALL_RUN_WINDOW_TICKS;
         debug("open window ticks={}", remainingAirHookWindowTicks);
     }
@@ -38,7 +43,7 @@ public final class ClientGrapplingHookWallRunBridge {
     }
 
     public static void tick() {
-        if (remainingAirHookWindowTicks <= 0) {
+        if (!ParcoolCompat.isLoaded() || remainingAirHookWindowTicks <= 0) {
             return;
         }
 

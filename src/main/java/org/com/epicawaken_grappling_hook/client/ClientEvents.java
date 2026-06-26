@@ -31,6 +31,7 @@ import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHook;
 import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHookRenderer;
 import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.lwjgl.glfw.GLFW;
 import top.theillusivec4.curios.api.client.CuriosRendererRegistry;
 import yesman.epicfight.api.animation.Joint;
@@ -160,9 +161,15 @@ public class ClientEvents {
                     handJoint,
                     GrapplingHookRenderDebugControls.ropeHandLocalOffset(playerPatch),
                     partialTicks);
+            Vec3 missedP2Pos = ArmatureUtil.getJointWorldPos(
+                    playerPatch,
+                    handJoint,
+                    GrapplingHookRenderDebugControls.ropeMissedP2LocalOffset(),
+                    partialTicks);
             float previewYaw = previewYaw(minecraft.player, partialTicks, manualPreview);
             Vec3 previewHookPos = handPos.add(forwardFromYaw(previewYaw).scale(3.0D));
-            renderWorldRope(previewHookPos, handPos, cameraPos, poseStack, bufferSource);
+            renderWorldShortRope(missedP2Pos, handPos, cameraPos, poseStack, bufferSource);
+            renderWorldShortRope(previewHookPos, missedP2Pos, cameraPos, poseStack, bufferSource);
             renderWorldProjectile(previewHookPos, previewYaw, 0.0F, cameraPos, poseStack, bufferSource);
             bufferSource.endBatch();
         }
@@ -193,8 +200,27 @@ public class ClientEvents {
                         Mth.lerp(partialTicks, grapplingHook.xo, grapplingHook.getX()),
                         Mth.lerp(partialTicks, grapplingHook.yo, grapplingHook.getY()),
                         Mth.lerp(partialTicks, grapplingHook.zo, grapplingHook.getZ()));
-                hookPos = ClientMissedHookRopeRetractTracker.getVisualRopeOrigin(grapplingHook, player, playerPatch, hookPos, handPos);
-                renderWorldRope(hookPos, handPos, cameraPos, poseStack, bufferSource);
+                if (!GrapplingHookMissedTracker.hasMissed(player)) {
+                    renderWorldRope(hookPos, handPos, cameraPos, poseStack, bufferSource);
+                    if (player == minecraft.player) {
+                        renderedLocalPlayerRope = true;
+                    }
+                    continue;
+                }
+
+                Vec3 missedP2Pos = ArmatureUtil.getJointWorldPos(
+                        playerPatch,
+                        handJoint,
+                        GrapplingHookRenderDebugControls.ropeMissedP2LocalOffset(),
+                        partialTicks);
+                ClientMissedHookRopeRetractTracker.RopeRenderState ropeRenderState =
+                        ClientMissedHookRopeRetractTracker.getRopeRenderState(grapplingHook, player, playerPatch, hookPos, handPos, missedP2Pos);
+                if (ropeRenderState.hasBend()) {
+                    renderWorldShortRope(ropeRenderState.bendPos(), handPos, cameraPos, poseStack, bufferSource);
+                    renderWorldShortRope(ropeRenderState.visualHookPos(), ropeRenderState.bendPos(), cameraPos, poseStack, bufferSource);
+                } else {
+                    renderWorldShortRope(ropeRenderState.visualHookPos(), handPos, cameraPos, poseStack, bufferSource);
+                }
                 if (player == minecraft.player) {
                     renderedLocalPlayerRope = true;
                 }
@@ -207,6 +233,14 @@ public class ClientEvents {
             poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             poseStack.translate(ropeOrigin.x, ropeOrigin.y, ropeOrigin.z);
             GrapplingHookRopeRenderUtil.renderLocal(ropeTarget.subtract(ropeOrigin), poseStack, bufferSource, LightTexture.FULL_BRIGHT);
+            poseStack.popPose();
+        }
+
+        private static void renderWorldShortRope(Vec3 ropeOrigin, Vec3 ropeTarget, Vec3 cameraPos, PoseStack poseStack, MultiBufferSource bufferSource) {
+            poseStack.pushPose();
+            poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+            poseStack.translate(ropeOrigin.x, ropeOrigin.y, ropeOrigin.z);
+            GrapplingHookRopeRenderUtil.renderShortLocal(ropeTarget.subtract(ropeOrigin), poseStack, bufferSource, LightTexture.FULL_BRIGHT);
             poseStack.popPose();
         }
 

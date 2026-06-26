@@ -6,6 +6,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import top.theillusivec4.curios.client.render.CuriosLayer;
 import yesman.epicfight.api.animation.AnimationPlayer;
@@ -82,13 +83,15 @@ public class EpicFightGrapplingHookArmLayer extends UniqueLayer<LivingEntity, Li
         }
 
         OpenMatrix4f jointPose = poses[handJoint.getId()];
-        logRenderDebug(player, entityPatch, handJoint, jointPose, partialTicks);
+        if (Config.debugLogging) {
+            logRenderDebug(player, entityPatch, handJoint, jointPose, partialTicks);
+        }
 
         poseStack.pushPose();
         MathUtils.mulStack(poseStack, jointPose);
         poseStack.translate(ARM_MOUNT_X, ARM_MOUNT_Y, ARM_MOUNT_Z);
         poseStack.scale(ARM_MOUNT_SCALE, ARM_MOUNT_SCALE, ARM_MOUNT_SCALE);
-        if (GrapplingHookRenderDebugControls.isPullModelForced()) {
+        if (GrapplingHookRenderDebugControls.shouldUsePullModel(player)) {
             GrapplingHookRenderDebugControls.applyEpicFightPullTransform(poseStack);
             GrapplingHookArmModelRenderer.render(GrapplingHookArmModelRenderer.ARM_PULL_MODEL, entry.get().stack(), poseStack, bufferSource, packedLight);
         } else {

@@ -2,13 +2,9 @@ package org.com.epicawaken_grappling_hook.network;
 
 import java.util.function.Supplier;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.Entity;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import org.com.epicawaken_grappling_hook.Config;
-import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookUseTracker;
-import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
-import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 
 public class SyncConfiguredUsePacket {
     private final int entityId;
@@ -29,12 +25,8 @@ public class SyncConfiguredUsePacket {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
             if (context.getDirection().getReceptionSide().isClient()) {
-                ClientGrapplingHookUseTracker.markConfiguredUse(packet.entityId);
-                if (Minecraft.getInstance().level != null) {
-                    Entity entity = Minecraft.getInstance().level.getEntity(packet.entityId);
-                    GrapplingHookMissedTracker.clearMissed(entity);
-                    GrapplingHookParcoolBlocker.block(entity, Config.maxLifeTicks + Config.getHookLockDelayTicks() + 20);
-                }
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                        org.com.epicawaken_grappling_hook.client.ClientNetworkPacketHandlers.handleConfiguredUse(packet.entityId));
             }
         });
         context.setPacketHandled(true);

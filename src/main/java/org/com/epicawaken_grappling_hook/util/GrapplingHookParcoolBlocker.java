@@ -25,7 +25,10 @@ public final class GrapplingHookParcoolBlocker {
     }
 
     public static void block(Entity entity, int ticks) {
-        if (!Config.disableParcoolCrawlAndSlideDuringHook || !(entity instanceof Player player) || player.level() == null) {
+        if (!ParcoolCompat.isLoaded()
+                || !Config.disableParcoolCrawlAndSlideDuringHook
+                || !(entity instanceof Player player)
+                || player.level() == null) {
             return;
         }
 
@@ -58,7 +61,7 @@ public final class GrapplingHookParcoolBlocker {
     }
 
     private static void handleBlockedPlayer(Player player, boolean repairPose) {
-        if (BLOCKED_UNTIL.isEmpty() || !Config.disableParcoolCrawlAndSlideDuringHook) {
+        if (BLOCKED_UNTIL.isEmpty() || !ParcoolCompat.isLoaded() || !Config.disableParcoolCrawlAndSlideDuringHook) {
             return;
         }
 

@@ -9,6 +9,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.network.GrapplingHookFovType;
+import org.com.epicawaken_grappling_hook.util.ParcoolCompat;
 import yesman.epicfight.client.world.capabilites.entitypatch.player.LocalPlayerPatch;
 import yesman.epicfight.world.capabilities.EpicFightCapabilities;
 
@@ -110,6 +111,10 @@ public final class ClientGrapplingHookSprintRestore {
     }
 
     private static boolean isFastRunning(LocalPlayer player) {
+        if (!ParcoolCompat.isLoaded()) {
+            return false;
+        }
+
         Parkourability parkourability = Parkourability.get(player);
         if (parkourability == null) {
             return false;
