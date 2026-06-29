@@ -5,12 +5,5 @@
   "textures": {
     "texture0": "epicawaken_grappling_hook:item/grappling_hook_arm_pull",
     "particle": "epicawaken_grappling_hook:item/grappling_hook_arm_pull"
-  },
-  "display": {
-    "epicawaken_grappling_hook:worn": {
-      "rotation": [0, 180, 0],
-      "translation": [0, 0, 0],
-      "scale": [1, 1, 1]
-    }
   }
 }

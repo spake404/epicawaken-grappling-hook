@@ -50,14 +50,31 @@ public class EpicFightGrapplingHookFirstPersonLayer extends PatchedLayer<LocalPl
         }
 
         poseStack.pushPose();
-        MathUtils.mulStack(poseStack, poses[handJoint.getId()]);
+        OpenMatrix4f jointPose = poses[handJoint.getId()];
+        MathUtils.mulStack(poseStack, jointPose);
         poseStack.translate(ARM_MOUNT_X, ARM_MOUNT_Y, ARM_MOUNT_Z);
         poseStack.scale(ARM_MOUNT_SCALE, ARM_MOUNT_SCALE, ARM_MOUNT_SCALE);
-        if (GrapplingHookRenderDebugControls.shouldUsePullModel(player)) {
+        boolean pullModel = GrapplingHookRenderDebugControls.shouldUsePullModel(player);
+        GrapplingHookRenderPathDebug.logJointMatrix(
+                "EPIC_FIGHT_FIRST_PERSON",
+                player,
+                pullModel,
+                handJoint.getName(),
+                handJoint.getId(),
+                jointPose);
+        GrapplingHookRenderPathDebug.logPoseTop("first_after_joint_mount", player, pullModel, poseStack);
+        GrapplingHookRenderPathDebug.logRenderPath(
+                "EPIC_FIGHT_FIRST_PERSON",
+                player,
+                pullModel,
+                "layerIdentity=" + System.identityHashCode(this) + " using EPIC_FIGHT transform joint=" + handJoint.getName() + " id=" + handJoint.getId());
+        if (pullModel) {
             GrapplingHookRenderDebugControls.applyEpicFightPullTransform(poseStack);
+            GrapplingHookRenderPathDebug.logPoseTop("first_after_mod_pull_transform", player, true, poseStack);
             GrapplingHookArmModelRenderer.render(GrapplingHookArmModelRenderer.ARM_PULL_MODEL, entry.get().stack(), poseStack, bufferSource, packedLight);
         } else {
             GrapplingHookRenderDebugControls.applyEpicFightNormalTransform(poseStack);
+            GrapplingHookRenderPathDebug.logPoseTop("first_after_mod_normal_transform", player, false, poseStack);
             GrapplingHookArmModelRenderer.render(entry.get().stack(), poseStack, bufferSource, packedLight);
         }
         poseStack.popPose();

@@ -70,12 +70,18 @@ public class ClientEvents {
         }
 
         @SubscribeEvent
+        public static void onModelBakingCompleted(ModelEvent.BakingCompleted event) {
+            GrapplingHookRenderPathDebug.logLifecycle("model baking completed; resource reload may have rebuilt client renderers");
+        }
+
+        @SubscribeEvent
         public static void clientSetup(FMLClientSetupEvent event) {
             event.enqueueWork(() -> CuriosRendererRegistry.register(ModItems.GRAPPLING_HOOK.get(), GrapplingHookCurioRenderer::new));
         }
 
         @SubscribeEvent
         public static void onModifyPatchedRenderers(PatchedRenderersEvent.Modify event) {
+            GrapplingHookRenderPathDebug.logLifecycle("PatchedRenderersEvent.Modify fired; installing Epic Fight grappling hook layers");
             EpicFightGrapplingHookArmLayer.onModifyPatchedRenderers(event);
         }
     }

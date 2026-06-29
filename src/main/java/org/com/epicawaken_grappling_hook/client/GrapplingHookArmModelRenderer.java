@@ -3,6 +3,7 @@ package org.com.epicawaken_grappling_hook.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.block.model.ItemTransform;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.resources.ResourceLocation;
@@ -37,6 +38,8 @@ public final class GrapplingHookArmModelRenderer {
             int packedLight) {
         Minecraft minecraft = Minecraft.getInstance();
         BakedModel model = minecraft.getModelManager().getModel(modelLocation);
+        ItemTransform transform = model.getTransforms().getTransform(WORN);
+        GrapplingHookRenderPathDebug.logModelRender(modelLocation, model, WORN, transform);
         minecraft.getItemRenderer().render(
                 stack,
                 WORN,

@@ -33,7 +33,17 @@ public class GrapplingHookCurioRenderer implements ICurioRenderer {
             float ageInTicks,
             float netHeadYaw,
             float headPitch) {
-        if (stack.isEmpty() || EpicFightCuriosFallbackGuard.isSuppressedLayerCall()) {
+        if (stack.isEmpty()) {
+            return;
+        }
+
+        boolean suppressedLayerCall = EpicFightCuriosFallbackGuard.isSuppressedLayerCall();
+        if (suppressedLayerCall) {
+            GrapplingHookRenderPathDebug.logRenderPath(
+                    "CURIO_SUPPRESSED_BY_EPIC_FIGHT",
+                    slotContext.entity(),
+                    GrapplingHookRenderDebugControls.shouldUsePullModel(slotContext.entity()),
+                    "Curios fallback call suppressed while Epic Fight animated model is active");
             return;
         }
 
@@ -46,7 +56,13 @@ public class GrapplingHookCurioRenderer implements ICurioRenderer {
         humanoidModel.leftArm.translateAndRotate(poseStack);
         poseStack.translate(ARM_MOUNT_X, ARM_MOUNT_Y, ARM_MOUNT_Z);
         poseStack.scale(ARM_MOUNT_SCALE, ARM_MOUNT_SCALE, ARM_MOUNT_SCALE);
-        if (GrapplingHookRenderDebugControls.shouldUsePullModel(slotContext.entity())) {
+        boolean pullModel = GrapplingHookRenderDebugControls.shouldUsePullModel(slotContext.entity());
+        GrapplingHookRenderPathDebug.logRenderPath(
+                "CURIO_DEFAULT",
+                slotContext.entity(),
+                pullModel,
+                "using DEFAULT transform on HumanoidModel.leftArm");
+        if (pullModel) {
             GrapplingHookRenderDebugControls.applyDefaultPullTransform(poseStack);
             GrapplingHookArmModelRenderer.render(GrapplingHookArmModelRenderer.ARM_PULL_MODEL, stack, poseStack, bufferSource, packedLight);
         } else {

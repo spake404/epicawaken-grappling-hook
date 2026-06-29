@@ -36,7 +36,12 @@ public class EpicFightGrapplingHookArmLayer extends UniqueLayer<LivingEntity, Li
     public static void onModifyPatchedRenderers(PatchedRenderersEvent.Modify event) {
         PatchedEntityRenderer renderer = event.get(EntityType.PLAYER);
         if (renderer instanceof PatchedLivingEntityRenderer<?, ?, ?, ?, ?> livingRenderer) {
+            GrapplingHookRenderPathDebug.logLifecycle("adding third-person Epic Fight layer renderer={} rendererIdentity={}",
+                    renderer.getClass().getName(),
+                    System.identityHashCode(renderer));
             addLayer(livingRenderer);
+        } else {
+            GrapplingHookRenderPathDebug.logLifecycle("skipped third-person Epic Fight layer renderer={}", renderer == null ? "null" : renderer.getClass().getName());
         }
         addFirstPersonLayer();
     }
@@ -50,8 +55,11 @@ public class EpicFightGrapplingHookArmLayer extends UniqueLayer<LivingEntity, Li
     private static void addFirstPersonLayer() {
         yesman.epicfight.client.ClientEngine clientEngine = yesman.epicfight.client.ClientEngine.getInstance();
         if (clientEngine == null || clientEngine.renderEngine == null || clientEngine.renderEngine.getFirstPersonRenderer() == null) {
+            GrapplingHookRenderPathDebug.logLifecycle("skipped first-person Epic Fight layer clientEngineReady={}", clientEngine != null);
             return;
         }
+        GrapplingHookRenderPathDebug.logLifecycle("adding first-person Epic Fight layer firstPersonRendererIdentity={}",
+                System.identityHashCode(clientEngine.renderEngine.getFirstPersonRenderer()));
         clientEngine.renderEngine.getFirstPersonRenderer().addPatchedLayer(CuriosLayer.class, new EpicFightGrapplingHookFirstPersonLayer());
     }
 
@@ -91,11 +99,27 @@ public class EpicFightGrapplingHookArmLayer extends UniqueLayer<LivingEntity, Li
         MathUtils.mulStack(poseStack, jointPose);
         poseStack.translate(ARM_MOUNT_X, ARM_MOUNT_Y, ARM_MOUNT_Z);
         poseStack.scale(ARM_MOUNT_SCALE, ARM_MOUNT_SCALE, ARM_MOUNT_SCALE);
-        if (GrapplingHookRenderDebugControls.shouldUsePullModel(player)) {
+        boolean pullModel = GrapplingHookRenderDebugControls.shouldUsePullModel(player);
+        GrapplingHookRenderPathDebug.logJointMatrix(
+                "EPIC_FIGHT_THIRD_PERSON",
+                player,
+                pullModel,
+                handJoint.getName(),
+                handJoint.getId(),
+                jointPose);
+        GrapplingHookRenderPathDebug.logPoseTop("third_after_joint_mount", player, pullModel, poseStack);
+        GrapplingHookRenderPathDebug.logRenderPath(
+                "EPIC_FIGHT_THIRD_PERSON",
+                player,
+                pullModel,
+                "layerIdentity=" + System.identityHashCode(this) + " using EPIC_FIGHT transform joint=" + handJoint.getName() + " id=" + handJoint.getId());
+        if (pullModel) {
             GrapplingHookRenderDebugControls.applyEpicFightPullTransform(poseStack);
+            GrapplingHookRenderPathDebug.logPoseTop("third_after_mod_pull_transform", player, true, poseStack);
             GrapplingHookArmModelRenderer.render(GrapplingHookArmModelRenderer.ARM_PULL_MODEL, entry.get().stack(), poseStack, bufferSource, packedLight);
         } else {
             GrapplingHookRenderDebugControls.applyEpicFightNormalTransform(poseStack);
+            GrapplingHookRenderPathDebug.logPoseTop("third_after_mod_normal_transform", player, false, poseStack);
             GrapplingHookArmModelRenderer.render(entry.get().stack(), poseStack, bufferSource, packedLight);
         }
         poseStack.popPose();
