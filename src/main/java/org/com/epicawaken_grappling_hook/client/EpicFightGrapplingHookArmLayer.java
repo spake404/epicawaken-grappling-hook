@@ -79,7 +79,7 @@ public class EpicFightGrapplingHookArmLayer extends UniqueLayer<LivingEntity, Li
             return;
         }
 
-        Optional<GrapplingHookCurioLookup.Entry> entry = GrapplingHookCurioLookup.findVisible(player);
+        Optional<GrapplingHookEquipmentLookup.Entry> entry = GrapplingHookEquipmentLookup.findVisible(player);
         if (entry.isEmpty()) {
             return;
         }

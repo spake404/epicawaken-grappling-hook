@@ -4,9 +4,11 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.renderer.entity.player.PlayerRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.api.distmarker.Dist;
@@ -14,7 +16,9 @@ import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.ComputeFovModifierEvent;
 import net.minecraftforge.client.event.ModelEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
+import net.minecraftforge.client.event.RenderHandEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -38,6 +42,7 @@ import yesman.epicfight.api.animation.Joint;
 import yesman.epicfight.api.client.forgeevent.PatchedRenderersEvent;
 import yesman.epicfight.world.capabilities.EpicFightCapabilities;
 import yesman.epicfight.world.capabilities.entitypatch.player.PlayerPatch;
+import yesman.epicfight.config.ClientConfig;
 import net.minecraft.world.phys.Vec3;
 
 public class ClientEvents {
@@ -60,6 +65,16 @@ public class ClientEvents {
         @SubscribeEvent
         public static void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {
             event.registerEntityRenderer(ModEntities.GRAPPLING_HOOK.get(), GrapplingHookRenderer::new);
+        }
+
+        @SubscribeEvent
+        public static void addEntityRendererLayers(EntityRenderersEvent.AddLayers event) {
+            for (String skinName : event.getSkins()) {
+                PlayerRenderer renderer = event.getPlayerSkin(skinName);
+                if (renderer != null) {
+                    renderer.addLayer(new GrapplingHookOffhandPlayerLayer(renderer));
+                }
+            }
         }
 
         @SubscribeEvent
@@ -96,6 +111,7 @@ public class ClientEvents {
             if (event.phase != TickEvent.Phase.END) {
                 return;
             }
+            GrapplingHookOffhandRenderState.restoreAll();
             ClientGrapplingHookJumpInputSync.tick();
             while (USE_GRAPPLING_HOOK.consumeClick()) {
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
@@ -117,6 +133,27 @@ public class ClientEvents {
         @SubscribeEvent(priority = EventPriority.LOWEST)
         public static void onComputeFovModifier(ComputeFovModifierEvent event) {
             ClientGrapplingHookFovEffect.onComputeFovModifier(event);
+        }
+
+        @SubscribeEvent
+        public static void onRenderHand(RenderHandEvent event) {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (event.getHand() == InteractionHand.OFF_HAND
+                    && minecraft.player != null
+                    && shouldHideFirstPersonOffhandHook(minecraft.player)
+                    && GrapplingHookEquipmentLookup.isGrapplingHookStack(event.getItemStack())) {
+                event.setCanceled(true);
+            }
+        }
+
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        public static void onRenderPlayerPre(RenderPlayerEvent.Pre event) {
+            GrapplingHookOffhandRenderState.hideForPlayerRender(event.getEntity());
+        }
+
+        @SubscribeEvent(priority = EventPriority.LOWEST)
+        public static void onRenderPlayerPost(RenderPlayerEvent.Post event) {
+            GrapplingHookOffhandRenderState.restoreAfterPlayerRender(event.getEntity());
         }
 
         @SubscribeEvent
@@ -278,6 +315,11 @@ public class ClientEvents {
 
         private static float bodyYaw(Player player, float partialTicks) {
             return Mth.lerp(partialTicks, player.yBodyRotO, player.yBodyRot);
+        }
+
+        private static boolean shouldHideFirstPersonOffhandHook(Player player) {
+            return ClientConfig.enableAnimatedFirstPersonModel
+                    && EpicFightCapabilities.getEntityPatch(player, PlayerPatch.class) != null;
         }
     }
 }

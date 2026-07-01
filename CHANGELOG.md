@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.0 - 2026-07-01
+
+### 中文
+
+- 新增副手槽位支持：抓钩放在副手时，也可以通过原有快捷键使用抓钩功能。
+- 副手抓钩现在会复用已有的手臂挂载渲染方式，优先使用 Curios，Curios 未装备时再使用副手。
+- Epic Fight 第一人称和第三人称渲染现在都支持从副手读取抓钩并显示手臂模型。
+- 非 Epic Fight 的普通玩家模型新增副手抓钩手臂渲染层，使副手装备时也能像 Curios 一样挂在手臂上。
+- 隐藏第三人称下原版副手抓钩显示，避免副手物品模型和自定义手臂模型重复显示。
+
+### English
+
+- Added offhand slot support, allowing the grappling hook to be used from the offhand with the existing keybind.
+- Reused the existing arm-mounted render path for offhand hooks, with Curios taking priority when both sources are present.
+- Added Epic Fight first-person and third-person rendering support for offhand-equipped hooks.
+- Added a vanilla player render layer so offhand hooks are mounted on the arm outside Epic Fight as well.
+- Suppressed the vanilla third-person offhand item render for the grappling hook to avoid duplicate models.
+
 ## 1.3.0 - 2026-06-29
 
 ### 中文

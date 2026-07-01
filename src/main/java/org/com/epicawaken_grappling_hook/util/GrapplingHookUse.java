@@ -89,6 +89,10 @@ public class GrapplingHookUse {
     }
 
     private static boolean hasEquippedGrapplingHook(ServerPlayer player) {
+        if (isGrapplingHookStack(player.getOffhandItem())) {
+            return true;
+        }
+
         return CuriosApi.getCuriosInventory(player)
                 .resolve()
                 .flatMap(handler -> handler.findFirstCurio(GrapplingHookUse::isGrapplingHookStack))
