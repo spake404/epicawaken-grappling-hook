@@ -18,6 +18,22 @@
 - Added a vanilla player render layer so offhand hooks are mounted on the arm outside Epic Fight as well.
 - Suppressed the vanilla third-person offhand item render for the grappling hook to avoid duplicate models.
 
+## 1.4.0 - 2026-07-01
+
+### 中文
+
+- 将抓钩物品栏图标从原版拴绳替换为本模组的抓钩 OBJ 模型。
+- 为抓钩物品模型新增 GUI、地面、展示框、第一人称和第三人称 display transform。
+- 绑定抓钩手臂贴图作为物品模型材质和粒子材质，使物品栏显示与模组自有模型保持一致。
+- 保留临时资源包调参流程，方便在游戏内通过 `F3+T` 重新加载并微调模型显示参数。
+
+### English
+
+- Replaced the vanilla lead inventory icon with the mod's own grappling hook OBJ model.
+- Added GUI, ground, fixed, first-person, and third-person display transforms for the grappling hook item model.
+- Bound the grappling hook arm texture as the item model and particle texture so the inventory render uses the mod-owned visual asset.
+- Kept the temporary resource-pack tuning workflow available for quick in-game `F3+T` display transform iteration.
+
 ## 1.3.0 - 2026-06-29
 
 ### 中文
