@@ -1,5 +1,7 @@
 ﻿{
   "item.epicawaken_grappling_hook.grappling_hook": "钩锁",
+  "item.epicawaken_grappling_hook.phantom_grappling_hook": "幻翼钩锁",
+  "item.epicawaken_grappling_hook.rope": "绳子",
   "itemGroup.epicawaken_grappling_hook.main": "钩锁",
   "key.categories.epicawaken_grappling_hook": "钩锁",
   "key.epicawaken_grappling_hook.use_grappling_hook": "使用钩锁",

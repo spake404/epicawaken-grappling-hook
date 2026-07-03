@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "epicawaken_grappling_hook:grappling_hook"
+    "epicawaken_grappling_hook:grappling_hook",
+    "epicawaken_grappling_hook:phantom_grappling_hook"
   ]
 }

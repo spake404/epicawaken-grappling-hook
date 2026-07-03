@@ -3,6 +3,7 @@ package org.com.epicawaken_grappling_hook.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.entity.layers.PlayerItemInHandLayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -60,6 +61,7 @@ public class EpicFightGrapplingHookArmLayer extends UniqueLayer<LivingEntity, Li
         }
         GrapplingHookRenderPathDebug.logLifecycle("adding first-person Epic Fight layer firstPersonRendererIdentity={}",
                 System.identityHashCode(clientEngine.renderEngine.getFirstPersonRenderer()));
+        clientEngine.renderEngine.getFirstPersonRenderer().addPatchedLayerAlways(PlayerItemInHandLayer.class, new EpicFightGrapplingHookFirstPersonItemInHandLayer());
         clientEngine.renderEngine.getFirstPersonRenderer().addPatchedLayer(CuriosLayer.class, new EpicFightGrapplingHookFirstPersonLayer());
     }
 

@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.7.0 - 2026-07-03
+
+### 中文
+
+- 新增幻翼钩锁物品，作为升级版钩锁的第一版实现。
+- 幻翼钩锁暂时复用普通钩锁的释放、命中、拉拽、耐久、冷却和绳子修理逻辑。
+- 幻翼钩锁挂载和投射物渲染使用 `grapping_hook_pull` 无头备用模型作为主体，并叠加 Minecraft 幻翼模型作为钩锁头。
+- 幻翼钩锁支持副手和 Curios 槽位，并与普通钩锁共享使用冷却。
+- 修复 Epic Fight 渲染路径下 Curios 槽位里的幻翼钩锁不会显示手臂模型的问题。
+- 修复 Epic Fight 第一人称副手装备钩锁或幻翼钩锁时，手臂挂载模型和手持物品模型重复渲染的问题。
+- 幻翼钩锁投射物现在只渲染幻翼模型，保留原有绳子渲染，并播放原版幻翼飞行动画。
+- 幻翼钩锁投射物会按钩锁锁定时间线性从 0.50 放大到 1.00，使动作速度调整后仍能在最远有效距离达到目标大小。
+- 清理幻翼投射物首次渲染调试日志和临时记录集合，减少发布版日志噪音和渲染路径额外开销。
+- 长按摆荡玩法尚未接入，将在后续版本单独实现和调参。
+
+### English
+
+- Added the Phantom Grappling Hook item as the first-pass upgraded grappling hook.
+- The Phantom Grappling Hook currently reuses the normal grappling hook release, hit, pull, durability, cooldown, and rope repair behavior.
+- Its equipped and projectile renders use the `grapping_hook_pull` headless fallback model as the body and overlay the Minecraft phantom model as the hook head.
+- The Phantom Grappling Hook supports both offhand and Curios slots, sharing cooldown with the normal grappling hook.
+- Fixed the Phantom Grappling Hook arm model not showing from Curios in the Epic Fight render path.
+- Fixed duplicate first-person Epic Fight rendering when a normal or phantom grappling hook is equipped in the offhand: the arm-mounted model remains, while the vanilla in-hand item render is skipped.
+- Added render debug targets for mounted and projectile phantom transforms so their position, rotation, and scale can be tuned in-game.
+- Added render debug targets for the Phantom Grappling Hook's wing base/tip rotations, allowing the phantom wings to be folded and tuned in-game.
+- Phantom Grappling Hook projectiles now render only the phantom model while keeping the existing rope render and playing the vanilla phantom flight animation.
+- Phantom Grappling Hook projectiles now scale linearly from 0.50 to 1.00 over the grappling hook lock delay, so the target size is reached at the effective maximum range even when hook animation speed changes.
+- Removed temporary first-render projectile diagnostics to reduce release-build log noise and extra render-path bookkeeping.
+- Long-press swinging is not implemented yet and will be handled in a later tuning pass.
+
+## 1.6.0 - 2026-07-02
+
+### 中文
+
+- 将钩锁改为 64 点耐久物品，成功释放钩锁时消耗 1 点耐久。
+- 钩锁耐久耗尽后无法释放；尝试使用时播放 `hook_pull` 占位动作和物品损坏音效，不生成钩锁投射物，并进入正常冷却。
+- 新增绳子物品，暂时使用占位模型。
+- 新增三根 `minecraft:string` 竖直摆放合成 3 根绳子的配方。
+- 绳子现在可作为钩锁修理材料，支持铁砧修理和工作台直接修理；每根绳子恢复 1 点耐久。
+
+### English
+
+- Changed the grappling hook into a 64-durability item, consuming 1 durability on each successful release.
+- Prevented releasing the grappling hook when its durability is depleted; failed attempts play the `hook_pull` placeholder animation and item break sound, spawn no hook projectile, and enter the normal cooldown.
+- Added a rope item with a placeholder model.
+- Added a recipe that crafts 3 rope from three vertically stacked `minecraft:string`.
+- Rope can now repair the grappling hook through both an anvil and direct crafting-table repair; each rope restores 1 durability.
+- Crafting-table and anvil repairs now require enough rope to cover all missing durability, then restore the grappling hook to full durability in one operation.
+
 ## 1.5.0 - 2026-07-01
 
 ### 中文

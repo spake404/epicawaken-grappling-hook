@@ -29,7 +29,11 @@ final class GrapplingHookEquipmentLookup {
     }
 
     static boolean isGrapplingHookStack(ItemStack stack) {
-        return !stack.isEmpty() && stack.is(ModItems.GRAPPLING_HOOK.get());
+        return !stack.isEmpty() && (stack.is(ModItems.GRAPPLING_HOOK.get()) || stack.is(ModItems.PHANTOM_GRAPPLING_HOOK.get()));
+    }
+
+    static boolean isPhantomGrapplingHookStack(ItemStack stack) {
+        return !stack.isEmpty() && stack.is(ModItems.PHANTOM_GRAPPLING_HOOK.get());
     }
 
     enum Source {

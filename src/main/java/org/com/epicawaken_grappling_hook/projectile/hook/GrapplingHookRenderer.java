@@ -20,6 +20,7 @@ import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.client.ClientMissedHookRopeRetractTracker;
 import org.com.epicawaken_grappling_hook.client.GrapplingHookRenderDebugControls;
+import org.com.epicawaken_grappling_hook.client.PhantomGrapplingHookRenderUtil;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
@@ -82,7 +83,7 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
             poseStack.translate(visualOffset.x, visualOffset.y, visualOffset.z);
         }
         orientLikeProjectile(poseStack, renderRotation.yaw, renderRotation.pitch);
-        renderProjectileModel(poseStack, bufferSource, packedLight);
+        renderProjectileModel(grapplingHook.getVariant(), poseStack, bufferSource, packedLight, grapplingHook.tickCount + partialTicks);
         poseStack.popPose();
     }
 
@@ -221,6 +222,23 @@ public class GrapplingHookRenderer extends EntityRenderer<GrapplingHook> {
     }
 
     public static void renderProjectileModel(PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+        renderProjectileModel(GrapplingHookVariant.NORMAL, poseStack, bufferSource, packedLight);
+    }
+
+    public static void renderProjectileModel(GrapplingHookVariant variant, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+        renderProjectileModel(variant, poseStack, bufferSource, packedLight, 0.0F);
+    }
+
+    public static void renderProjectileModel(GrapplingHookVariant variant, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, float ageInTicks) {
+        if (variant.isPhantom()) {
+            poseStack.pushPose();
+            GrapplingHookRenderDebugControls.applyProjectileArrowTransform(poseStack);
+            poseStack.translate(-PROJECTILE_MODEL_CENTER_X, -PROJECTILE_MODEL_CENTER_Y, -PROJECTILE_MODEL_CENTER_Z);
+            PhantomGrapplingHookRenderUtil.renderProjectilePhantom(poseStack, bufferSource, packedLight, ageInTicks);
+            poseStack.popPose();
+            return;
+        }
+
         poseStack.pushPose();
         GrapplingHookRenderDebugControls.applyProjectileArrowTransform(poseStack);
         poseStack.translate(-PROJECTILE_MODEL_CENTER_X, -PROJECTILE_MODEL_CENTER_Y, -PROJECTILE_MODEL_CENTER_Z);

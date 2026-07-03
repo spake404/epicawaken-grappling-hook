@@ -1,5 +1,7 @@
 {
   "item.epicawaken_grappling_hook.grappling_hook": "Grappling Hook",
+  "item.epicawaken_grappling_hook.phantom_grappling_hook": "Phantom Grappling Hook",
+  "item.epicawaken_grappling_hook.rope": "Rope",
   "itemGroup.epicawaken_grappling_hook.main": "Grappling Hook",
   "key.categories.epicawaken_grappling_hook": "Grappling Hook",
   "key.epicawaken_grappling_hook.use_grappling_hook": "Use Grappling Hook",

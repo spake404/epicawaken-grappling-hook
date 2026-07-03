@@ -3,7 +3,6 @@ package org.com.epicawaken_grappling_hook.client;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import org.com.epicawaken_grappling_hook.item.ModItems;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.SlotContext;
 import top.theillusivec4.curios.api.type.inventory.IDynamicStackHandler;
@@ -34,7 +33,7 @@ final class GrapplingHookCurioLookup {
                     cosmetic = false;
                 }
 
-                if (!stack.isEmpty() && stack.is(ModItems.GRAPPLING_HOOK.get())) {
+                if (GrapplingHookEquipmentLookup.isGrapplingHookStack(stack)) {
                     result[0] = new Entry(stack, new SlotContext(slotId, player, i, cosmetic, renderable));
                     return;
                 }

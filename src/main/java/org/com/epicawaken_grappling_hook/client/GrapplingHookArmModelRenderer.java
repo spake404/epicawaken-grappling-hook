@@ -14,6 +14,7 @@ import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 public final class GrapplingHookArmModelRenderer {
     public static final ResourceLocation ARM_MODEL = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "item/grappling_hook_arm");
     public static final ResourceLocation ARM_PULL_MODEL = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "item/grappling_hook_arm_pull");
+    public static final ResourceLocation PHANTOM_ARM_MODEL = ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "item/phantom_grappling_hook_arm");
     public static final ItemDisplayContext WORN = ItemDisplayContext.create(
             "EPICAWAKEN_GRAPPLING_HOOK_WORN",
             ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "worn"),
@@ -31,6 +32,21 @@ public final class GrapplingHookArmModelRenderer {
     }
 
     public static void render(
+            ResourceLocation modelLocation,
+            ItemStack stack,
+            PoseStack poseStack,
+            MultiBufferSource bufferSource,
+            int packedLight) {
+        if (GrapplingHookEquipmentLookup.isPhantomGrapplingHookStack(stack)) {
+            renderModel(PHANTOM_ARM_MODEL, stack, poseStack, bufferSource, packedLight);
+            PhantomGrapplingHookRenderUtil.renderMountedPhantom(poseStack, bufferSource, packedLight);
+            return;
+        }
+
+        renderModel(modelLocation, stack, poseStack, bufferSource, packedLight);
+    }
+
+    private static void renderModel(
             ResourceLocation modelLocation,
             ItemStack stack,
             PoseStack poseStack,

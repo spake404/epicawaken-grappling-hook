@@ -1,0 +1,9 @@
+{
+  "loader": "forge:obj",
+  "model": "epicawaken_grappling_hook:models/item/obj/grapping_hook_pull.obj",
+  "flip_v": true,
+  "textures": {
+    "texture0": "epicawaken_grappling_hook:item/grappling_hook_arm_pull",
+    "particle": "epicawaken_grappling_hook:item/grappling_hook_arm_pull"
+  }
+}

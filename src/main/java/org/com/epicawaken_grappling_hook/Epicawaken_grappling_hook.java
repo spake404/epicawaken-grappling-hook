@@ -17,6 +17,7 @@ import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
+import org.com.epicawaken_grappling_hook.recipe.ModRecipeSerializers;
 import org.slf4j.Logger;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.type.capability.ICurioItem;
@@ -33,7 +34,11 @@ public class Epicawaken_grappling_hook {
             CreativeModeTab.builder()
                     .withTabsBefore(CreativeModeTabs.COMBAT)
                     .icon(() -> ModItems.GRAPPLING_HOOK.get().getDefaultInstance())
-                    .displayItems((parameters, output) -> output.accept(ModItems.GRAPPLING_HOOK.get()))
+                    .displayItems((parameters, output) -> {
+                        output.accept(ModItems.GRAPPLING_HOOK.get());
+                        output.accept(ModItems.PHANTOM_GRAPPLING_HOOK.get());
+                        output.accept(ModItems.ROPE.get());
+                    })
                     .build());
 
     public Epicawaken_grappling_hook() {
@@ -41,6 +46,7 @@ public class Epicawaken_grappling_hook {
 
         ModEntities.ENTITY_TYPES.register(modEventBus);
         ModItems.ITEMS.register(modEventBus);
+        ModRecipeSerializers.RECIPE_SERIALIZERS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         modEventBus.addListener(ModHookAnimations::registerAnimations);
         modEventBus.addListener(this::commonSetup);
@@ -52,6 +58,7 @@ public class Epicawaken_grappling_hook {
     private void commonSetup(final FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             CuriosApi.registerCurio(ModItems.GRAPPLING_HOOK.get(), (ICurioItem) ModItems.GRAPPLING_HOOK.get());
+            CuriosApi.registerCurio(ModItems.PHANTOM_GRAPPLING_HOOK.get(), (ICurioItem) ModItems.PHANTOM_GRAPPLING_HOOK.get());
             ModNetwork.register();
         });
     }

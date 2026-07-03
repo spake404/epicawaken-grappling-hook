@@ -12,7 +12,13 @@ public class ModItems {
             DeferredRegister.create(ForgeRegistries.ITEMS, Epicawaken_grappling_hook.MODID);
 
     public static final RegistryObject<Item> GRAPPLING_HOOK = ITEMS.register("grappling_hook", () ->
-            new GrapplingHookCurioItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
+            new GrapplingHookCurioItem(new Item.Properties().durability(64).rarity(Rarity.RARE)));
+
+    public static final RegistryObject<Item> PHANTOM_GRAPPLING_HOOK = ITEMS.register("phantom_grappling_hook", () ->
+            new GrapplingHookCurioItem(new Item.Properties().durability(64).rarity(Rarity.EPIC)));
+
+    public static final RegistryObject<Item> ROPE = ITEMS.register("rope", () ->
+            new Item(new Item.Properties()));
 
     private ModItems() {
     }

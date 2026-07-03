@@ -5,7 +5,9 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
@@ -32,6 +34,12 @@ public final class GrapplingHookRenderDebugControls {
     private static final Transform ROPE_GROUND_AIR_TRANSFORM = new Transform(0.0F, 0.325F, -0.225F, 0.0F, 0.0F, 0.0F, 1.0F);
     private static final Transform ROPE_MISSED_P2_TRANSFORM = new Transform(0.0F, 0.575F, -0.175F, 0.0F, 0.0F, 0.0F, 1.0F);
     private static final Transform PROJECTILE_ARROW_TRANSFORM = new Transform(-0.325F, 0.425F, -0.425F, -90.0F, -5.0F, 90.0F, 0.84F);
+    private static final Transform PHANTOM_MOUNTED_TRANSFORM = new Transform(-1.275F, 1.375F, -0.150F, 90.0F, 180.0F, 0.0F, 0.55F);
+    private static final Transform PHANTOM_PROJECTILE_TRANSFORM = new Transform(-0.475F, 1.550F, -0.175F, 90.0F, 185.0F, 180.0F, 0.50F);
+    private static final Transform PHANTOM_LEFT_WING_BASE_TRANSFORM = new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
+    private static final Transform PHANTOM_LEFT_WING_TIP_TRANSFORM = new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -75.0F, 1.0F);
+    private static final Transform PHANTOM_RIGHT_WING_BASE_TRANSFORM = new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
+    private static final Transform PHANTOM_RIGHT_WING_TIP_TRANSFORM = new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 75.0F, 1.0F);
 
     private static final KeyMapping TOGGLE_MODEL = key("toggle_model", GLFW.GLFW_KEY_KP_ADD);
     private static final KeyMapping TOGGLE_TARGET = key("toggle_target", GLFW.GLFW_KEY_KP_SUBTRACT);
@@ -141,6 +149,33 @@ public final class GrapplingHookRenderDebugControls {
         PROJECTILE_ARROW_TRANSFORM.apply(poseStack);
     }
 
+    public static void applyPhantomMountedTransform(PoseStack poseStack) {
+        PHANTOM_MOUNTED_TRANSFORM.apply(poseStack);
+    }
+
+    public static void applyPhantomProjectileTransform(PoseStack poseStack) {
+        PHANTOM_PROJECTILE_TRANSFORM.apply(poseStack);
+    }
+
+    public static void applyPhantomWingPose(ModelPart root) {
+        ModelPart body = root.getChild("body");
+        applyPartRotation(body.getChild("left_wing_base"), PHANTOM_LEFT_WING_BASE_TRANSFORM);
+        applyPartRotation(body.getChild("left_wing_base").getChild("left_wing_tip"), PHANTOM_LEFT_WING_TIP_TRANSFORM);
+        applyPartRotation(body.getChild("right_wing_base"), PHANTOM_RIGHT_WING_BASE_TRANSFORM);
+        applyPartRotation(body.getChild("right_wing_base").getChild("right_wing_tip"), PHANTOM_RIGHT_WING_TIP_TRANSFORM);
+    }
+
+    public static boolean shouldPreviewPhantomProjectile() {
+        return switch (target) {
+            case PHANTOM_PROJECTILE,
+                    PHANTOM_LEFT_WING_BASE,
+                    PHANTOM_LEFT_WING_TIP,
+                    PHANTOM_RIGHT_WING_BASE,
+                    PHANTOM_RIGHT_WING_TIP -> true;
+            default -> false;
+        };
+    }
+
     public static Vec3 ropeHandLocalOffset() {
         return new Vec3(ROPE_HAND_TRANSFORM.x, ROPE_HAND_TRANSFORM.y, ROPE_HAND_TRANSFORM.z);
     }
@@ -184,6 +219,24 @@ public final class GrapplingHookRenderDebugControls {
         }
         if (target == Target.PROJECTILE_ARROW) {
             return PROJECTILE_ARROW_TRANSFORM;
+        }
+        if (target == Target.PHANTOM_MOUNTED) {
+            return PHANTOM_MOUNTED_TRANSFORM;
+        }
+        if (target == Target.PHANTOM_PROJECTILE) {
+            return PHANTOM_PROJECTILE_TRANSFORM;
+        }
+        if (target == Target.PHANTOM_LEFT_WING_BASE) {
+            return PHANTOM_LEFT_WING_BASE_TRANSFORM;
+        }
+        if (target == Target.PHANTOM_LEFT_WING_TIP) {
+            return PHANTOM_LEFT_WING_TIP_TRANSFORM;
+        }
+        if (target == Target.PHANTOM_RIGHT_WING_BASE) {
+            return PHANTOM_RIGHT_WING_BASE_TRANSFORM;
+        }
+        if (target == Target.PHANTOM_RIGHT_WING_TIP) {
+            return PHANTOM_RIGHT_WING_TIP_TRANSFORM;
         }
         if (target == Target.DEFAULT) {
             return modelMode == ModelMode.NORMAL ? DEFAULT_NORMAL_TRANSFORM : DEFAULT_PULL_TRANSFORM;
@@ -236,7 +289,13 @@ public final class GrapplingHookRenderDebugControls {
         ROPE_HAND("rope_hand"),
         ROPE_GROUND_AIR("rope_ground_air"),
         ROPE_MISSED_P2("rope_missed_p2"),
-        PROJECTILE_ARROW("projectile_arrow");
+        PROJECTILE_ARROW("projectile_arrow"),
+        PHANTOM_MOUNTED("phantom_mounted"),
+        PHANTOM_PROJECTILE("phantom_projectile"),
+        PHANTOM_LEFT_WING_BASE("phantom_left_wing_base"),
+        PHANTOM_LEFT_WING_TIP("phantom_left_wing_tip"),
+        PHANTOM_RIGHT_WING_BASE("phantom_right_wing_base"),
+        PHANTOM_RIGHT_WING_TIP("phantom_right_wing_tip");
 
         private final String label;
 
@@ -251,7 +310,13 @@ public final class GrapplingHookRenderDebugControls {
                 case ROPE_HAND -> ROPE_GROUND_AIR;
                 case ROPE_GROUND_AIR -> ROPE_MISSED_P2;
                 case ROPE_MISSED_P2 -> PROJECTILE_ARROW;
-                case PROJECTILE_ARROW -> DEFAULT;
+                case PROJECTILE_ARROW -> PHANTOM_MOUNTED;
+                case PHANTOM_MOUNTED -> PHANTOM_PROJECTILE;
+                case PHANTOM_PROJECTILE -> PHANTOM_LEFT_WING_BASE;
+                case PHANTOM_LEFT_WING_BASE -> PHANTOM_LEFT_WING_TIP;
+                case PHANTOM_LEFT_WING_TIP -> PHANTOM_RIGHT_WING_BASE;
+                case PHANTOM_RIGHT_WING_BASE -> PHANTOM_RIGHT_WING_TIP;
+                case PHANTOM_RIGHT_WING_TIP -> DEFAULT;
             };
         }
     }
@@ -344,5 +409,11 @@ public final class GrapplingHookRenderDebugControls {
         if (degrees != 0.0F) {
             poseStack.mulPose(axis.rotationDegrees(degrees));
         }
+    }
+
+    private static void applyPartRotation(ModelPart part, Transform transform) {
+        part.xRot = transform.rotX * Mth.DEG_TO_RAD;
+        part.yRot = transform.rotY * Mth.DEG_TO_RAD;
+        part.zRot = transform.rotZ * Mth.DEG_TO_RAD;
     }
 }

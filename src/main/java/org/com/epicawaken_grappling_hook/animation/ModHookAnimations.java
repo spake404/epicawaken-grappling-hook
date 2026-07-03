@@ -55,12 +55,17 @@ public class ModHookAnimations {
                                 .addStateRemoveOld(EntityState.CAN_SKILL_EXECUTION, false)
                                 .addEvents(AnimationEvent.InTimeEvent.create(0.05F, (entityPatch, animation, params) -> {
                                     if (entityPatch instanceof PlayerPatch<?> playerPatch) {
-                                        playerPatch.playSound(SoundEvents.FISHING_BOBBER_THROW, 0.0F, 0.0F);
                                         Player player = playerPatch.getOriginal();
+                                        if (!GrapplingHookUse.hasActiveConfiguredUse(player)) {
+                                            return;
+                                        }
+
+                                        playerPatch.playSound(SoundEvents.FISHING_BOBBER_THROW, 0.0F, 0.0F);
                                         playerPatch.setModelYRot(player.getYRot(), true);
 
                                         GrapplingHook hook = new GrapplingHook(ModEntities.GRAPPLING_HOOK.get(), player.level());
                                         hook.setOwner(player);
+                                        hook.setVariant(GrapplingHookUse.getActiveConfiguredUseVariant(player));
                                         hook.setPos(player.getX(), player.getEyeY(), player.getZ());
                                         hook.shootFromRotation(player, player.getXRot(), entityPatch.getYRot(), 0.0F, (float) Config.getProjectileSpeed(), (float) Config.projectileInaccuracy);
                                         player.level().addFreshEntity(hook);

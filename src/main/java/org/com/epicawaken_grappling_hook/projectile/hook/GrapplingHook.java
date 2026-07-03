@@ -3,6 +3,10 @@ package org.com.epicawaken_grappling_hook.projectile.hook;
 import net.minecraft.util.Mth;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -39,6 +43,7 @@ import yesman.epicfight.world.capabilities.EpicFightCapabilities;
 import yesman.epicfight.world.capabilities.entitypatch.LivingEntityPatch;
 
 public class GrapplingHook extends AbstractArrow {
+    private static final EntityDataAccessor<Integer> DATA_VARIANT = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
     public static final float PULL_TARGET = 0.22F;
     private static final double AIR_HOOK_MIN_ANGLE_DEGREES = 3.0D;
     private static final double AIR_HOOK_MIN_HEIGHT_ABOVE_EYES = 1.0D;
@@ -64,6 +69,30 @@ public class GrapplingHook extends AbstractArrow {
 
     public GrapplingHook(EntityType<? extends AbstractArrow> entityType, Level level) {
         super(entityType, level);
+    }
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(DATA_VARIANT, GrapplingHookVariant.NORMAL.ordinal());
+    }
+
+    @Override
+    public void addAdditionalSaveData(@NotNull CompoundTag tag) {
+        super.addAdditionalSaveData(tag);
+        tag.putString("HookVariant", this.getVariant().name());
+    }
+
+    @Override
+    public void readAdditionalSaveData(@NotNull CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        if (tag.contains("HookVariant")) {
+            try {
+                this.setVariant(GrapplingHookVariant.valueOf(tag.getString("HookVariant")));
+            } catch (IllegalArgumentException ignored) {
+                this.setVariant(GrapplingHookVariant.NORMAL);
+            }
+        }
     }
 
     @Override
@@ -1024,6 +1053,14 @@ public class GrapplingHook extends AbstractArrow {
 
     public Vec3 getTerrainTargetForDebug() {
         return this.terrainTarget;
+    }
+
+    public GrapplingHookVariant getVariant() {
+        return GrapplingHookVariant.fromId(this.entityData.get(DATA_VARIANT));
+    }
+
+    public void setVariant(GrapplingHookVariant variant) {
+        this.entityData.set(DATA_VARIANT, variant.ordinal());
     }
 
     public enum HookType {

@@ -19,4 +19,9 @@ public class GrapplingHookCurioItem extends Item implements ICurioItem {
     public boolean canEquipFromUse(SlotContext slotContext, ItemStack stack) {
         return canEquip(slotContext, stack);
     }
+
+    @Override
+    public boolean isValidRepairItem(ItemStack stack, ItemStack repairCandidate) {
+        return repairCandidate.is(ModItems.ROPE.get()) || super.isValidRepairItem(stack, repairCandidate);
+    }
 }

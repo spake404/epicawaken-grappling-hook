@@ -33,6 +33,7 @@ import org.com.epicawaken_grappling_hook.network.ModNetwork;
 import org.com.epicawaken_grappling_hook.network.UseGrapplingHookPacket;
 import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHook;
 import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHookRenderer;
+import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHookVariant;
 import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
@@ -60,6 +61,8 @@ public class ClientEvents {
         @SubscribeEvent
         public static void registerKeys(RegisterKeyMappingsEvent event) {
             event.register(USE_GRAPPLING_HOOK);
+            GrapplingHookRenderDebugControls.register(event);
+            GrapplingHookLineDebugControls.register(event);
         }
 
         @SubscribeEvent
@@ -81,17 +84,22 @@ public class ClientEvents {
         public static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
             event.register(GrapplingHookArmModelRenderer.ARM_MODEL);
             event.register(GrapplingHookArmModelRenderer.ARM_PULL_MODEL);
+            event.register(GrapplingHookArmModelRenderer.PHANTOM_ARM_MODEL);
             event.register(GrapplingHookRenderer.PROJECTILE_MODEL);
         }
 
         @SubscribeEvent
         public static void onModelBakingCompleted(ModelEvent.BakingCompleted event) {
+            PhantomGrapplingHookRenderUtil.clearModelCache();
             GrapplingHookRenderPathDebug.logLifecycle("model baking completed; resource reload may have rebuilt client renderers");
         }
 
         @SubscribeEvent
         public static void clientSetup(FMLClientSetupEvent event) {
-            event.enqueueWork(() -> CuriosRendererRegistry.register(ModItems.GRAPPLING_HOOK.get(), GrapplingHookCurioRenderer::new));
+            event.enqueueWork(() -> {
+                CuriosRendererRegistry.register(ModItems.GRAPPLING_HOOK.get(), GrapplingHookCurioRenderer::new);
+                CuriosRendererRegistry.register(ModItems.PHANTOM_GRAPPLING_HOOK.get(), GrapplingHookCurioRenderer::new);
+            });
         }
 
         @SubscribeEvent
@@ -125,6 +133,8 @@ public class ClientEvents {
             if (ClientGrapplingHookWallRunBridge.hasOpenWindow()) {
                 ClientGrapplingHookWallRunBridge.tick();
             }
+            GrapplingHookRenderDebugControls.tick();
+            GrapplingHookLineDebugControls.tick();
             if (Config.debugLogging) {
                 ClientGrapplingHookDebugLogger.tick();
             }
@@ -213,7 +223,7 @@ public class ClientEvents {
             Vec3 previewHookPos = handPos.add(forwardFromYaw(previewYaw).scale(3.0D));
             renderWorldShortRope(missedP2Pos, handPos, cameraPos, poseStack, bufferSource);
             renderWorldShortRope(previewHookPos, missedP2Pos, cameraPos, poseStack, bufferSource);
-            renderWorldProjectile(previewHookPos, previewYaw, 0.0F, cameraPos, poseStack, bufferSource);
+            renderWorldProjectile(previewHookPos, previewYaw, 0.0F, minecraft.player.tickCount + partialTicks, cameraPos, poseStack, bufferSource);
             bufferSource.endBatch();
         }
 
@@ -287,12 +297,18 @@ public class ClientEvents {
             poseStack.popPose();
         }
 
-        private static void renderWorldProjectile(Vec3 projectilePos, float yaw, float pitch, Vec3 cameraPos, PoseStack poseStack, MultiBufferSource bufferSource) {
+        private static void renderWorldProjectile(Vec3 projectilePos, float yaw, float pitch, float ageInTicks, Vec3 cameraPos, PoseStack poseStack, MultiBufferSource bufferSource) {
             poseStack.pushPose();
             poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
             poseStack.translate(projectilePos.x, projectilePos.y, projectilePos.z);
             GrapplingHookRenderer.orientLikeProjectile(poseStack, yaw, pitch);
-            GrapplingHookRenderer.renderProjectileModel(poseStack, bufferSource, LightTexture.FULL_BRIGHT);
+            GrapplingHookVariant variant = GrapplingHookRenderDebugControls.shouldPreviewPhantomProjectile()
+                    ? GrapplingHookVariant.PHANTOM
+                    : GrapplingHookVariant.NORMAL;
+            if (variant.isPhantom()) {
+                ageInTicks = PhantomGrapplingHookRenderUtil.loopingProjectilePreviewAge(ageInTicks);
+            }
+            GrapplingHookRenderer.renderProjectileModel(variant, poseStack, bufferSource, LightTexture.FULL_BRIGHT, ageInTicks);
             poseStack.popPose();
         }
 
