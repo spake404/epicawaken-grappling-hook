@@ -131,10 +131,15 @@ public class GrapplingHook extends AbstractArrow {
 
         if (this.life == lockDelayTicks) {
             if (!this.hooked) {
-                this.startMissedHookGroundAnimation(owner, lockDelayTicks);
-                return;
+                if (this.getVariant().isPhantom()) {
+                    this.startPhantomMissedHookPull(owner, lockDelayTicks);
+                } else {
+                    this.startMissedHookGroundAnimation(owner, lockDelayTicks);
+                    return;
+                }
+            } else {
+                this.lockHookType();
             }
-            this.lockHookType();
         }
 
         if (!this.hooked) {
@@ -146,6 +151,23 @@ public class GrapplingHook extends AbstractArrow {
             case AIR -> this.tickAirHook(lockDelayTicks);
             case GROUND -> this.tickGroundHook(lockDelayTicks);
             case MISSED -> this.tickMissedHook(lockDelayTicks);
+        }
+    }
+
+    private void startPhantomMissedHookPull(Entity owner, int lockDelayTicks) {
+        this.hooked = true;
+        this.setDeltaMovement(Vec3.ZERO);
+        this.lockHookType();
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] started phantom missed hook pull owner={} hookLife={} lockDelayTicks={} hookType={} hookPos={} ownerPos={} hookVelocity={} ownerVelocity={}",
+                    owner.getId(),
+                    this.life,
+                    lockDelayTicks,
+                    this.hookType,
+                    this.position(),
+                    owner.position(),
+                    this.getDeltaMovement(),
+                    owner.getDeltaMovement());
         }
     }
 
