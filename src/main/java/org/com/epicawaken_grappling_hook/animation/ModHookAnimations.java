@@ -26,11 +26,14 @@ import yesman.epicfight.world.capabilities.entitypatch.player.PlayerPatch;
 public class ModHookAnimations {
     public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_PULL;
     public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_AIR;
+    public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_AIR_TEST;
+    public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_AIR_HOLD;
     public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_GROUND;
 
     // Movement input can interrupt hook recovery after these animation elapsed times.
     public static final float HOOK_PULL_MOVEMENT_INTERRUPT_AT = 1.0F;
     public static final float HOOK_AIR_MOVEMENT_INTERRUPT_AT = 0.9F;
+    public static final float HOOK_AIR_TEST_MOVEMENT_INTERRUPT_AT = 1.5F;
     public static final float HOOK_GROUND_MOVEMENT_INTERRUPT_AT = 0.9F;
     private static final float HOOK_PULL_FALLBACK_TOTAL_SECONDS = 2.1667F;
     private static final float HOOK_PULL_SLOW_SEGMENT_START_RATIO = 0.30F;
@@ -81,6 +84,24 @@ public class ModHookAnimations {
                                 .addStateRemoveOld(EntityState.CAN_BASIC_ATTACK, false)
                                 .addStateRemoveOld(EntityState.CAN_SKILL_EXECUTION, false),
                         HOOK_AIR_MOVEMENT_INTERRUPT_AT));
+
+        HOOK_AIR_TEST = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_air_test",
+                accessor -> limitArrivalMovementLock(
+                        new ActionAnimation(0.15F, accessor, Armatures.BIPED)
+                                .addProperty(AnimationProperty.AttackAnimationProperty.STOP_MOVEMENT, false)
+                                .newTimePair(0.0F, 0.25F)
+                                .addStateRemoveOld(EntityState.CAN_BASIC_ATTACK, false)
+                                .addStateRemoveOld(EntityState.CAN_SKILL_EXECUTION, false),
+                        HOOK_AIR_TEST_MOVEMENT_INTERRUPT_AT));
+
+        HOOK_AIR_HOLD = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_air_hold",
+                accessor -> limitArrivalMovementLock(
+                        new ActionAnimation(0.15F, accessor, Armatures.BIPED)
+                                .addProperty(AnimationProperty.AttackAnimationProperty.STOP_MOVEMENT, false)
+                                .newTimePair(0.0F, HOOK_AIR_TEST_MOVEMENT_INTERRUPT_AT)
+                                .addStateRemoveOld(EntityState.CAN_BASIC_ATTACK, false)
+                                .addStateRemoveOld(EntityState.CAN_SKILL_EXECUTION, false),
+                        HOOK_AIR_TEST_MOVEMENT_INTERRUPT_AT));
 
         HOOK_GROUND = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_ground",
                 accessor -> limitMovementLock(

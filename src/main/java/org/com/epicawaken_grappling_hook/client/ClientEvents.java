@@ -121,6 +121,7 @@ public class ClientEvents {
             }
             GrapplingHookOffhandRenderState.restoreAll();
             ClientGrapplingHookJumpInputSync.tick();
+            ClientGrapplingHookHoldInputSync.tick();
             while (USE_GRAPPLING_HOOK.consumeClick()) {
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
                 ClientGrapplingHookSprintRestore.recordUseAttempt();

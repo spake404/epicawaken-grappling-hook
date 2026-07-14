@@ -269,7 +269,7 @@ public final class GrapplingHookRenderDebugControls {
             return false;
         }
         String name = String.valueOf(animation.registryName());
-        return name.endsWith("/hook_ground") || name.endsWith("/hook_air");
+        return name.endsWith("/hook_ground") || name.endsWith("/hook_air") || name.endsWith("/hook_air_test") || name.endsWith("/hook_air_hold");
     }
 
     private enum ModelMode {

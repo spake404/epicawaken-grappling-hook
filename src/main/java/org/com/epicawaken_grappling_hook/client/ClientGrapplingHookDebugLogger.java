@@ -33,9 +33,11 @@ public class ClientGrapplingHookDebugLogger {
 
         AnimationPlayer animationPlayer = playerPatch.getClientAnimator().baseLayer.animationPlayer;
         boolean isHookPull = animationPlayer.getRealAnimation() == ModHookAnimations.HOOK_PULL;
-        boolean isHookAir = animationPlayer.getRealAnimation() == ModHookAnimations.HOOK_AIR;
+        boolean isHookAir = animationPlayer.getRealAnimation() == ModHookAnimations.HOOK_AIR
+                || animationPlayer.getRealAnimation() == ModHookAnimations.HOOK_AIR_TEST;
+        boolean isHookAirHold = animationPlayer.getRealAnimation() == ModHookAnimations.HOOK_AIR_HOLD;
         boolean isHookGround = animationPlayer.getRealAnimation() == ModHookAnimations.HOOK_GROUND;
-        if (!isHookPull && !isHookAir && !isHookGround) {
+        if (!isHookPull && !isHookAir && !isHookAirHold && !isHookGround) {
             if (Config.debugLogging && wasTerrainHook) {
                 Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][CLIENT] hook animation ended at gameTime={}", minecraft.level.getGameTime());
             }
@@ -48,7 +50,7 @@ public class ClientGrapplingHookDebugLogger {
             EntityState state = playerPatch.getEntityState();
             Epicawaken_grappling_hook.LOGGER.info(
                     "[GrapplingHookDebug][CLIENT] {} tick gameTime={} elapsed={} arrived={} movementLocked={} inaction={} canBasicAttack={} canUseSkill={} updateLivingMotion={}",
-                    currentHookAnimationName(isHookPull, isHookAir, isHookGround),
+                    currentHookAnimationName(isHookPull, isHookAir, isHookAirHold, isHookGround),
                     gameTime,
                     animationPlayer.getElapsedTime(),
                     GrapplingHookArrivalTracker.hasArrived(player),
@@ -63,12 +65,15 @@ public class ClientGrapplingHookDebugLogger {
         wasTerrainHook = true;
     }
 
-    private static String currentHookAnimationName(boolean isHookPull, boolean isHookAir, boolean isHookGround) {
+    private static String currentHookAnimationName(boolean isHookPull, boolean isHookAir, boolean isHookAirHold, boolean isHookGround) {
         if (isHookPull) {
             return "HOOK_PULL";
         }
+        if (isHookAirHold) {
+            return "HOOK_AIR_HOLD";
+        }
         if (isHookAir) {
-            return "HOOK_AIR";
+            return "HOOK_AIR_TEST";
         }
         if (isHookGround) {
             return "HOOK_GROUND";

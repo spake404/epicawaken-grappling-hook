@@ -52,6 +52,11 @@ public class ModNetwork {
                 .decoder(SyncGrapplingHookJumpInputPacket::decode)
                 .consumerMainThread(SyncGrapplingHookJumpInputPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(SyncGrapplingHookHoldInputPacket.class, packetId++)
+                .encoder(SyncGrapplingHookHoldInputPacket::encode)
+                .decoder(SyncGrapplingHookHoldInputPacket::decode)
+                .consumerMainThread(SyncGrapplingHookHoldInputPacket::handle)
+                .add();
     }
 
     private ModNetwork() {
