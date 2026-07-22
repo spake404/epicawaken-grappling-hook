@@ -165,8 +165,8 @@ dependencies {
     // implementation fg.deobf("blank:coolmod-${mc_version}:${coolmod_version}")
 
     implementation fg.deobf("curse.maven:epic-fight-mod-405076:8049910")
-    implementation fg.deobf("curse.maven:combat-evolution-1377795:8051212")
-    implementation fg.deobf("curse.maven:epicfight-awaken-1423319:8168623")
+    implementation fg.deobf("curse.maven:combat-evolution-1377795:8368239")
+    implementation fg.deobf("curse.maven:epicfight-awaken-1423319:8262835")
     implementation fg.deobf("curse.maven:curios-309927:6418456")
     implementation fg.deobf("curse.maven:epicfight-extra-1434276:7961244")
     implementation fg.deobf("curse.maven:official-epic-fight-x-parcool-1259252:6870242")

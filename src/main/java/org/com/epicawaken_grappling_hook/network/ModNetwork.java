@@ -6,7 +6,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 
 public class ModNetwork {
-    private static final String PROTOCOL_VERSION = "1";
+    private static final String PROTOCOL_VERSION = "3";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "main"),

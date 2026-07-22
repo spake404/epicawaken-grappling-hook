@@ -6,32 +6,53 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.Mth;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
 import org.com.epicawaken_grappling_hook.Config;
+import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
 import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookUseTracker;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
 import org.com.epicawaken_grappling_hook.network.SyncConfiguredUsePacket;
+import org.com.epicawaken_grappling_hook.network.UseGrapplingHookPacket;
 import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHook;
 import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHookVariant;
 import top.theillusivec4.curios.api.CuriosApi;
 import yesman.epicfight.world.capabilities.EpicFightCapabilities;
 import yesman.epicfight.world.capabilities.entitypatch.player.ServerPlayerPatch;
 
+@Mod.EventBusSubscriber(modid = Epicawaken_grappling_hook.MODID)
 public class GrapplingHookUse {
     private static final int CONFIGURED_USE_TTL_TICKS = 80;
     private static final Map<UUID, Long> CONFIGURED_USES = new ConcurrentHashMap<>();
     private static final Map<UUID, GrapplingHookVariant> CONFIGURED_USE_VARIANTS = new ConcurrentHashMap<>();
+    private static final Map<UUID, UseSession> USE_SESSIONS = new ConcurrentHashMap<>();
 
-    public static void tryUse(ServerPlayer player) {
+    public static void handleInput(ServerPlayer player, UseGrapplingHookPacket.Action action, int sequenceId, float aimYaw, float aimPitch) {
+        if (sequenceId < 0) {
+            return;
+        }
+
+        if (action == UseGrapplingHookPacket.Action.PRESS) {
+            tryUse(player, sequenceId, aimYaw, aimPitch);
+        } else {
+            releaseUse(player, sequenceId);
+        }
+    }
+
+    private static void tryUse(ServerPlayer player, int sequenceId, float aimYaw, float aimPitch) {
         if (player.isSpectator() || !player.isAlive()) {
             return;
         }
@@ -39,38 +60,175 @@ public class GrapplingHookUse {
         if (grapplingHook.isEmpty()) {
             return;
         }
-        if (isOnGrapplingHookCooldown(player)) {
+        GrapplingHookVariant variant = GrapplingHookVariant.fromStack(grapplingHook);
+        if (hasActiveUseSession(player)) {
+            return;
+        }
+        if (isOnGrapplingHookCooldown(player, variant)) {
             return;
         }
         if (!canReleaseGrapplingHook(grapplingHook)) {
             playFailedUse(player);
-            addCooldown(player);
+            addCooldown(player, variant);
             return;
         }
 
-        GrapplingHookParcoolBlocker.block(player, Config.maxLifeTicks + Config.getHookLockDelayTicks() + 20);
+        GrapplingHookParcoolBlocker.block(player, Config.getHookUseBlockDurationTicks());
         GrapplingHookMissedTracker.clearMissed(player);
-        GrapplingHookVariant variant = GrapplingHookVariant.fromStack(grapplingHook);
+        float validatedAimYaw = Float.isFinite(aimYaw) ? Mth.wrapDegrees(aimYaw) : player.getYRot();
+        float validatedAimPitch = Float.isFinite(aimPitch) ? Mth.clamp(aimPitch, -90.0F, 90.0F) : player.getXRot();
+        USE_SESSIONS.put(player.getUUID(), new UseSession(
+                sequenceId,
+                player.serverLevel().getGameTime(),
+                variant,
+                validatedAimYaw,
+                validatedAimPitch,
+                !player.onGround()));
         markConfiguredUse(player, variant);
         ServerPlayerPatch playerPatch = EpicFightCapabilities.getEntityPatch(player, ServerPlayerPatch.class);
         if (playerPatch != null) {
             playerPatch.playAnimationSynchronized(ModHookAnimations.HOOK_PULL, 0.0F);
         } else {
-            shootFallbackHook(player, variant);
+            shootFallbackHook(player, variant, sequenceId);
         }
         damageGrapplingHook(player, grapplingHook);
 
-        addCooldown(player);
+        addCooldown(player, variant);
     }
 
-    private static void shootFallbackHook(ServerPlayer player, GrapplingHookVariant variant) {
+    private static void releaseUse(ServerPlayer player, int sequenceId) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null || session.sequenceId != sequenceId || !session.keyDown) {
+            return;
+        }
+
+        session.keyDown = false;
+        session.releaseGameTime = player.serverLevel().getGameTime();
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info(
+                    "[GrapplingHookUseDebug][SERVER] release owner={} sequence={} heldTicks={} swingAllowedAtPress={} onGround={} hookEntityId={}",
+                    player.getId(),
+                    sequenceId,
+                    session.releaseGameTime - session.pressGameTime,
+                    session.swingAllowedAtPress,
+                    player.onGround(),
+                    session.hookEntityId);
+        }
+    }
+
+    private static void shootFallbackHook(ServerPlayer player, GrapplingHookVariant variant, int sequenceId) {
         Level level = player.level();
         GrapplingHook hook = new GrapplingHook(ModEntities.GRAPPLING_HOOK.get(), level);
         hook.setOwner(player);
         hook.setVariant(variant);
+        hook.configureUse(sequenceId, variant.isPhantom());
         hook.setPos(player.getX(), player.getEyeY() - 0.1D, player.getZ());
-        hook.shootFromRotation(player, player.getXRot(), player.getYRot(), 0.0F, (float) Config.getProjectileSpeed(), (float) Config.projectileInaccuracy);
+        shootConfiguredHook(player, hook);
+        hook.captureSwingForwardDirectionFromVelocity();
         level.addFreshEntity(hook);
+        registerSpawnedHook(player, hook, sequenceId);
+    }
+
+    public static void shootConfiguredHook(ServerPlayer player, GrapplingHook hook) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        GrapplingHookVariant variant = session == null ? hook.getVariant() : session.variant;
+        float aimYaw = session == null ? player.getYRot() : session.aimYaw;
+        float aimPitch = session == null ? player.getXRot() : session.aimPitch;
+        double projectileSpeed = variant.isPhantom() ? Config.getPhantomProjectileSpeed() : Config.getProjectileSpeed();
+        if (variant.isPhantom()) {
+            Vec3 aimDirection = Vec3.directionFromRotation(aimPitch, aimYaw);
+            hook.shoot(
+                    aimDirection.x,
+                    aimDirection.y,
+                    aimDirection.z,
+                    (float) projectileSpeed,
+                    (float) Config.projectileInaccuracy);
+        } else {
+            hook.shootFromRotation(
+                    player,
+                    aimPitch,
+                    aimYaw,
+                    0.0F,
+                    (float) projectileSpeed,
+                    (float) Config.projectileInaccuracy);
+        }
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info(
+                    "[GrapplingHookAimDebug][SERVER] owner={} sequence={} packetYaw={} packetPitch={} serverYaw={} serverPitch={} velocity={}",
+                    player.getId(),
+                    session == null ? -1 : session.sequenceId,
+                    aimYaw,
+                    aimPitch,
+                    player.getYRot(),
+                    player.getXRot(),
+                    hook.getDeltaMovement());
+        }
+    }
+
+    public static void configureSpawnedHook(ServerPlayer player, GrapplingHook hook) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null) {
+            hook.configureUse(-1, false);
+            return;
+        }
+
+        hook.setVariant(session.variant);
+        hook.configureUse(session.sequenceId, session.variant.isPhantom());
+    }
+
+    public static void registerSpawnedHook(ServerPlayer player, GrapplingHook hook) {
+        registerSpawnedHook(player, hook, hook.getUseSequenceId());
+    }
+
+    private static void registerSpawnedHook(ServerPlayer player, GrapplingHook hook, int sequenceId) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session != null && session.sequenceId == sequenceId) {
+            session.hookEntityId = hook.getId();
+        }
+    }
+
+    public static HoldDecision getHoldDecision(ServerPlayer player, int sequenceId) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null || session.sequenceId != sequenceId || !session.variant.isPhantom()) {
+            return HoldDecision.NORMAL;
+        }
+
+        if (!session.swingAllowedAtPress) {
+            return HoldDecision.NORMAL;
+        }
+
+        long decisionTime = session.keyDown ? player.serverLevel().getGameTime() : session.releaseGameTime;
+        long heldTicks = Math.max(0L, decisionTime - session.pressGameTime);
+        if (heldTicks >= Config.phantomSwingHoldThresholdTicks) {
+            if (!session.keyDown) {
+                return HoldDecision.SWING_RELEASED;
+            }
+            return player.onGround() ? HoldDecision.PENDING : HoldDecision.SWING_HELD;
+        }
+
+        return session.keyDown ? HoldDecision.PENDING : HoldDecision.NORMAL;
+    }
+
+    public static boolean hasEquippedVariant(ServerPlayer player, GrapplingHookVariant variant) {
+        ItemStack stack = findEquippedGrapplingHook(player);
+        return !stack.isEmpty() && GrapplingHookVariant.fromStack(stack) == variant;
+    }
+
+    public static void finishUse(ServerPlayer player, int sequenceId, int hookEntityId, boolean refreshCooldown) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null || session.sequenceId != sequenceId) {
+            return;
+        }
+        if (session.hookEntityId >= 0 && hookEntityId >= 0 && session.hookEntityId != hookEntityId) {
+            return;
+        }
+
+        USE_SESSIONS.remove(player.getUUID(), session);
+        CONFIGURED_USES.remove(player.getUUID());
+        CONFIGURED_USE_VARIANTS.remove(player.getUUID());
+        if (refreshCooldown) {
+            addCooldown(player, session.variant);
+        }
     }
 
     public static boolean hasActiveConfiguredUse(Entity entity) {
@@ -114,6 +272,26 @@ public class GrapplingHookUse {
         ModNetwork.CHANNEL.send(PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> player), new SyncConfiguredUsePacket(player.getId()));
     }
 
+    private static boolean hasActiveUseSession(ServerPlayer player) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null) {
+            return false;
+        }
+
+        if (session.hookEntityId >= 0 && player.serverLevel().getEntity(session.hookEntityId) == null) {
+            finishUse(player, session.sequenceId, session.hookEntityId, false);
+            return false;
+        }
+
+        long age = player.serverLevel().getGameTime() - session.pressGameTime;
+        if (session.hookEntityId < 0 && age > CONFIGURED_USE_TTL_TICKS) {
+            finishUse(player, session.sequenceId, session.hookEntityId, false);
+            return false;
+        }
+
+        return true;
+    }
+
     private static void playFailedUse(ServerPlayer player) {
         GrapplingHookParcoolBlocker.block(player, 8);
         ServerPlayerPatch playerPatch = EpicFightCapabilities.getEntityPatch(player, ServerPlayerPatch.class);
@@ -133,20 +311,18 @@ public class GrapplingHookUse {
         player.containerMenu.broadcastChanges();
     }
 
-    private static void addCooldown(ServerPlayer player) {
-        if (Config.grapplingHookCooldown > 0) {
+    private static void addCooldown(ServerPlayer player, GrapplingHookVariant variant) {
+        if (!variant.isPhantom() && Config.grapplingHookCooldown > 0) {
             player.getCooldowns().addCooldown(ModItems.GRAPPLING_HOOK.get(), Config.grapplingHookCooldown);
-            player.getCooldowns().addCooldown(ModItems.PHANTOM_GRAPPLING_HOOK.get(), Config.grapplingHookCooldown);
         }
     }
 
-    private static boolean isOnGrapplingHookCooldown(ServerPlayer player) {
-        return player.getCooldowns().isOnCooldown(ModItems.GRAPPLING_HOOK.get())
-                || player.getCooldowns().isOnCooldown(ModItems.PHANTOM_GRAPPLING_HOOK.get());
+    private static boolean isOnGrapplingHookCooldown(ServerPlayer player, GrapplingHookVariant variant) {
+        return !variant.isPhantom() && player.getCooldowns().isOnCooldown(ModItems.GRAPPLING_HOOK.get());
     }
 
     private static boolean canReleaseGrapplingHook(ItemStack stack) {
-        return stack.isDamageableItem() && stack.getDamageValue() < stack.getMaxDamage();
+        return !stack.isDamageableItem() || stack.getDamageValue() < stack.getMaxDamage();
     }
 
     private static ItemStack findEquippedGrapplingHook(ServerPlayer player) {
@@ -165,6 +341,49 @@ public class GrapplingHookUse {
         return stack.is(ModItems.GRAPPLING_HOOK.get()) || stack.is(ModItems.PHANTOM_GRAPPLING_HOOK.get());
     }
 
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        UUID playerId = event.getEntity().getUUID();
+        USE_SESSIONS.remove(playerId);
+        CONFIGURED_USES.remove(playerId);
+        CONFIGURED_USE_VARIANTS.remove(playerId);
+    }
+
     private GrapplingHookUse() {
+    }
+
+    public enum HoldDecision {
+        NORMAL,
+        PENDING,
+        SWING_HELD,
+        SWING_RELEASED
+    }
+
+    private static final class UseSession {
+        private final int sequenceId;
+        private final long pressGameTime;
+        private final GrapplingHookVariant variant;
+        private final float aimYaw;
+        private final float aimPitch;
+        private final boolean swingAllowedAtPress;
+        private boolean keyDown = true;
+        private long releaseGameTime;
+        private int hookEntityId = -1;
+
+        private UseSession(
+                int sequenceId,
+                long pressGameTime,
+                GrapplingHookVariant variant,
+                float aimYaw,
+                float aimPitch,
+                boolean swingAllowedAtPress) {
+            this.sequenceId = sequenceId;
+            this.pressGameTime = pressGameTime;
+            this.releaseGameTime = pressGameTime;
+            this.variant = variant;
+            this.aimYaw = aimYaw;
+            this.aimPitch = aimPitch;
+            this.swingAllowedAtPress = swingAllowedAtPress;
+        }
     }
 }

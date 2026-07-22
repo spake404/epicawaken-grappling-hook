@@ -1,6 +1,8 @@
 package org.com.epicawaken_grappling_hook.animation;
 
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
@@ -25,6 +27,9 @@ import yesman.epicfight.world.capabilities.entitypatch.player.PlayerPatch;
 
 public class ModHookAnimations {
     public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_PULL;
+    public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_HOLD;
+    public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_HOLD_FORWARD;
+    public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_HOLD_BACK;
     public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_AIR;
     public static AnimationManager.AnimationAccessor<ActionAnimation> HOOK_GROUND;
 
@@ -63,15 +68,33 @@ public class ModHookAnimations {
                                         playerPatch.playSound(SoundEvents.FISHING_BOBBER_THROW, 0.0F, 0.0F);
                                         playerPatch.setModelYRot(player.getYRot(), true);
 
+                                        if (!(player instanceof ServerPlayer serverPlayer)) {
+                                            return;
+                                        }
+
                                         GrapplingHook hook = new GrapplingHook(ModEntities.GRAPPLING_HOOK.get(), player.level());
                                         hook.setOwner(player);
-                                        hook.setVariant(GrapplingHookUse.getActiveConfiguredUseVariant(player));
+                                        GrapplingHookUse.configureSpawnedHook(serverPlayer, hook);
                                         hook.setPos(player.getX(), player.getEyeY(), player.getZ());
-                                        hook.shootFromRotation(player, player.getXRot(), entityPatch.getYRot(), 0.0F, (float) Config.getProjectileSpeed(), (float) Config.projectileInaccuracy);
+                                        GrapplingHookUse.shootConfiguredHook(serverPlayer, hook);
+                                        hook.captureSwingForwardDirectionFromVelocity();
                                         player.level().addFreshEntity(hook);
+                                        GrapplingHookUse.registerSpawnedHook(serverPlayer, hook);
                                     }
                                 }, AnimationEvent.Side.SERVER)),
                         HOOK_PULL_MOVEMENT_INTERRUPT_AT));
+
+        HOOK_HOLD = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_hold",
+                accessor -> new HookHoldActionAnimation(0.15F, false, accessor, Armatures.BIPED)
+                        .addProperty(AnimationProperty.AttackAnimationProperty.STOP_MOVEMENT, false));
+
+        HOOK_HOLD_FORWARD = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_hold_forward",
+                accessor -> new HookHoldActionAnimation(0.15F, true, accessor, Armatures.BIPED)
+                        .addProperty(AnimationProperty.AttackAnimationProperty.STOP_MOVEMENT, false));
+
+        HOOK_HOLD_BACK = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_hold_back",
+                accessor -> new HookHoldActionAnimation(0.15F, true, accessor, Armatures.BIPED)
+                        .addProperty(AnimationProperty.AttackAnimationProperty.STOP_MOVEMENT, false));
 
         HOOK_AIR = builder.nextAccessor("biped/weapon/darknight_pursuiters/hook_air",
                 accessor -> limitArrivalMovementLock(
@@ -200,6 +223,51 @@ public class ModHookAnimations {
         @Override
         public float getPlaySpeed(LivingEntityPatch<?> entityPatch, DynamicAnimation animation) {
             return modifyHookPullSpeed(this, entityPatch, super.getPlaySpeed(entityPatch, animation));
+        }
+    }
+
+    private static class HookHoldActionAnimation extends ActionAnimation {
+        private final int reservedPhaseTicks;
+
+        private HookHoldActionAnimation(
+                float transitionTime,
+                boolean completeWithinSwingPhase,
+                AnimationManager.AnimationAccessor<? extends ActionAnimation> accessor,
+                AssetAccessor<? extends Armature> armature) {
+            super(transitionTime, accessor, armature);
+            this.reservedPhaseTicks = completeWithinSwingPhase
+                    ? (int) Math.ceil(transitionTime * 20.0F)
+                    : 0;
+            this.addProperty(
+                    AnimationProperty.StaticAnimationProperty.ELAPSED_TIME_MODIFIER,
+                    HookHoldActionAnimation::holdLastFrameWhileSwinging);
+        }
+
+        private static Pair<Float, Float> holdLastFrameWhileSwinging(
+                DynamicAnimation animation,
+                LivingEntityPatch<?> entityPatch,
+                float playbackSpeed,
+                float previousElapsedTime,
+                float elapsedTime) {
+            if (animation.isLinkAnimation()
+                    || GrapplingHook.findActiveSwingHook(entityPatch.getOriginal()) == null) {
+                return Pair.of(previousElapsedTime, elapsedTime);
+            }
+
+            float totalTime = animation.getTotalTime();
+            return Pair.of(
+                    Math.min(previousElapsedTime, totalTime),
+                    Math.min(elapsedTime, totalTime));
+        }
+
+        @Override
+        public float getPlaySpeed(LivingEntityPatch<?> entityPatch, DynamicAnimation animation) {
+            GrapplingHook swingHook = GrapplingHook.findActiveSwingHook(entityPatch.getOriginal());
+            if (swingHook == null) {
+                return super.getPlaySpeed(entityPatch, animation);
+            }
+            return super.getPlaySpeed(entityPatch, animation)
+                    * swingHook.getSwingAnimationSpeedMultiplier(this.getTotalTime(), this.reservedPhaseTicks);
         }
     }
 

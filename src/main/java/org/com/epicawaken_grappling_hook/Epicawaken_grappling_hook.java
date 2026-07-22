@@ -3,7 +3,6 @@ package org.com.epicawaken_grappling_hook;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -32,7 +31,6 @@ public class Epicawaken_grappling_hook {
 
     public static final RegistryObject<CreativeModeTab> MAIN_TAB = CREATIVE_MODE_TABS.register("main", () ->
             CreativeModeTab.builder()
-                    .withTabsBefore(CreativeModeTabs.COMBAT)
                     .icon(() -> ModItems.GRAPPLING_HOOK.get().getDefaultInstance())
                     .displayItems((parameters, output) -> {
                         output.accept(ModItems.GRAPPLING_HOOK.get());

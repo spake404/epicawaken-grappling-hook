@@ -1,5 +1,67 @@
 # Changelog
 
+## 2.0.0 - 2026-07-20
+
+### 中文
+
+以下内容汇总了从 1.5.0 到 2.0.0 的主要更新：
+
+- 在 1.5.0 的副手支持基础上，完善普通钩锁与幻翼钩锁在副手、Curios、Epic Fight 第一人称及第三人称下的使用和渲染兼容。
+- 钩锁改为 64 点耐久物品；新增绳子物品、绳子合成配方，以及工作台和铁砧修理机制。
+- 新增幻翼钩锁及对应的挂载模型、投射物模型、幻翼飞行动画和独立渲染效果。
+- 幻翼钩锁取消使用冷却，支持快速衔接下一次钩锁或连续摆荡。
+- 幻翼钩锁现在区分短按和长按：短按执行普通钩锁拉拽，长按 7 tick 后进入摆荡；玩家站在地面时只允许短按。
+- 长按判定前摇期间加入空中缓降，避免玩家在等待长按判定时过早落地；短按正式进入拉拽后缓降立即结束。
+- 长按摆荡支持以空气位置作为锚点，不再要求命中方块表面；默认发射距离约 12 格，并将摆荡绳长快速收缩到约 7 格。
+- 新增完整的摆荡绳长约束、自动切向推进、被动加速、动能保持、最大速度、最大摆荡角度和方向反转能量衰减机制，无需持续按方向键即可完成往返摆荡。
+- 修复摆荡过程中无限下坠、到达钩锁正下方停止、只向单侧摆荡、速度过高导致 360 度绕点旋转，以及向斜下方发射时运动方向异常等问题。
+- 修复长按目标点偶尔低于玩家视角、地面长按产生异常拉拽、接触地面后松开按键绳子不消失等状态同步和清理问题。
+- 新增长按摆荡动画流程：首次正向摆荡使用 hook_hold，后续正向使用 hook_hold_forward，反向使用 hook_hold_back。
+- 摆荡动画会根据正向和反向阶段时长分别调整 Epic Fight 原生播放速度，并在预测时间偏短时保持最后一帧，避免动作之间回到自由态或出现模型闪烁。
+- 正式运行环境会隐藏并关闭客户端暂停、慢动作、模型位置调参、回车钩锁预览和详细调试日志；相关工具代码仍保留，并仅在 Forge 开发环境中注册和启用。
+- 更新 Combat Evolution 与 EpicFight Awaken 依赖版本，为 2.0.0 发布版完成兼容性整理。
+
+### English
+
+The following summarizes the major changes from 1.5.0 through 2.0.0:
+
+- Expanded the 1.5.0 offhand work into complete normal and Phantom Grappling Hook support across offhand, Curios, Epic Fight first-person, and Epic Fight third-person rendering paths.
+- Converted grappling hooks into 64-durability items and added the rope item, rope recipe, crafting-table repair, and anvil repair support.
+- Added the Phantom Grappling Hook with dedicated equipped rendering, projectile rendering, phantom flight animation, and visual effects.
+- Removed the Phantom Grappling Hook cooldown so players can quickly chain another hook or continue consecutive swings.
+- Added short-press and long-press behavior to the Phantom Grappling Hook: short presses use the normal pull, while holding for 7 ticks enters swinging; players on the ground can only use the short-press behavior.
+- Added reduced falling during the airborne long-press windup so the player does not land before the hold decision completes; the effect ends as soon as a short press begins its normal pull.
+- Allowed long-press swings to anchor to an air position without requiring a block hit; the hook launches about 12 blocks and rapidly reels the swing rope toward about 7 blocks.
+- Added a full rope-length constraint, automatic tangential propulsion, passive acceleration, momentum preservation, maximum speed, maximum swing angle, and reversal energy loss so swings travel back and forth without continuous movement input.
+- Fixed infinite falling, stopping directly below the anchor, failing to swing back, excessive speed causing full rotations around the anchor, and incorrect movement when firing toward a downward anchor.
+- Fixed occasional long-press targets appearing below the view direction, abnormal ground long-press pulling, and ropes remaining after releasing the key following ground contact.
+- Added the complete swing animation sequence: hook_hold for the first forward swing, hook_hold_forward for later forward swings, and hook_hold_back for backward swings.
+- Swing animations now use separate forward and backward phase timing to adjust Epic Fight's native playback speed, and hold their final frame when a timing estimate is short to prevent free-state gaps and model flicker.
+- Production environments hide and disable client pause, slow motion, model transform editing, Enter-key hook previews, and verbose debug logging; the tools remain available and are registered only in Forge development environments.
+- Updated the Combat Evolution and EpicFight Awaken dependency versions as part of the 2.0.0 compatibility pass.
+
+### 2.0.0 补充更新（2026-07-22）
+
+- 修复部分无限耐久模组修改物品耐久属性后，钩锁会被误判为已损坏并禁止发射的问题；普通钩锁和幻翼钩锁现在都能兼容无限耐久物品。
+- 重写墙面上方安全落点处理，改为检查真实支撑碰撞面、完整玩家碰撞箱和可站立空间，并通过墙外抬升点再进入墙顶落点，减少卡墙、拉拽中断和到达后钩锁不消失的问题。
+- 为幻翼钩锁短按钩空加入独立冲量系统，提高水平推进和向上冲量，并分别限制水平、垂直及合成速度。
+- 完善幻翼钩锁物品栏渲染，使物品栏模型同时显示钩锁主体和幻翼；更新绳子物品图标与模型资源。
+- 将钩锁独立创造模式标签移动到第二页，避免挤占原版第一页并将“刷怪蛋”标签推到下一页。
+- 清理和校正 Forge 配置：移除不再生效的旧摆荡参数与误导性的生命周期选项，统一自动生命周期计算，修正配置说明，并补齐中文配置名称。
+- 将普通钩锁和幻翼钩锁的 Curios 装备位置从 `charm` 迁移到独立的 `glove` 槽位；两种钩锁不再接受护符栏或通用 Curio 槽位，副手使用仍然保留。
+- 版本号保持为 `2.0.0`。
+
+### 2.0.0 Additional Updates (2026-07-22)
+
+- Fixed compatibility with infinite-durability mods that caused grappling hooks to be treated as broken and prevented them from firing.
+- Reworked safe wall-top targeting to validate real support collision surfaces, the player's full collision box, and standing space, using a two-stage outward lift and wall-top destination to reduce wall clipping, interrupted pulls, and hooks remaining after arrival.
+- Added a dedicated empty-air short-press impulse system for the Phantom Grappling Hook with stronger horizontal and upward momentum plus separate horizontal, vertical, and total speed limits.
+- Improved Phantom Grappling Hook inventory rendering so both the hook body and phantom are visible, and updated the rope item icon and model resources.
+- Moved the grappling hook creative tab to the second page so it no longer displaces vanilla tabs or pushes Spawn Eggs off the first page.
+- Audited and cleaned the Forge configuration, removing obsolete swing parameters and the misleading lifetime option, centralizing automatic lifetime calculations, correcting descriptions, and completing Chinese configuration names.
+- Moved both grappling hooks from the Curios `charm` slot to a dedicated `glove` slot. Charm and generic Curio slots are no longer accepted, while offhand use remains supported.
+- The version remains `2.0.0`.
+
 ## 1.7.0 - 2026-07-03
 
 ### 中文

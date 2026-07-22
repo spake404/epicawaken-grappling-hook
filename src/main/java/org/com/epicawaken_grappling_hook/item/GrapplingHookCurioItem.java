@@ -12,7 +12,7 @@ public class GrapplingHookCurioItem extends Item implements ICurioItem {
 
     @Override
     public boolean canEquip(SlotContext slotContext, ItemStack stack) {
-        return "charm".equals(slotContext.identifier()) || "curio".equals(slotContext.identifier());
+        return "glove".equals(slotContext.identifier());
     }
 
     @Override

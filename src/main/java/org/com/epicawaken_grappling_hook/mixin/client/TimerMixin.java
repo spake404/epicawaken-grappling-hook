@@ -2,6 +2,7 @@ package org.com.epicawaken_grappling_hook.mixin.client;
 
 import net.minecraft.client.Timer;
 import org.com.epicawaken_grappling_hook.client.ClientSlowMotionDebugControls;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookDebugMode;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -24,7 +25,7 @@ public class TimerMixin {
 
     @Inject(method = "advanceTime", at = @At("HEAD"), cancellable = true)
     private void epicawaken_grappling_hook$advanceTime(long timeMillis, CallbackInfoReturnable<Integer> cir) {
-        if (!ClientSlowMotionDebugControls.isSlowed()) {
+        if (!GrapplingHookDebugMode.isEnabled() || !ClientSlowMotionDebugControls.isSlowed()) {
             return;
         }
 

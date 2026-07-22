@@ -14,6 +14,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.ComputeFovModifierEvent;
+import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.ModelEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
@@ -37,6 +38,7 @@ import org.com.epicawaken_grappling_hook.projectile.hook.GrapplingHookVariant;
 import org.com.epicawaken_grappling_hook.util.ArmatureUtil;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookDebugMode;
 import org.lwjgl.glfw.GLFW;
 import top.theillusivec4.curios.api.client.CuriosRendererRegistry;
 import yesman.epicfight.api.animation.Joint;
@@ -61,8 +63,11 @@ public class ClientEvents {
         @SubscribeEvent
         public static void registerKeys(RegisterKeyMappingsEvent event) {
             event.register(USE_GRAPPLING_HOOK);
-            GrapplingHookRenderDebugControls.register(event);
-            GrapplingHookLineDebugControls.register(event);
+            if (GrapplingHookDebugMode.isEnabled()) {
+                GrapplingHookRenderDebugControls.register(event);
+                GrapplingHookLineDebugControls.register(event);
+                ClientSlowMotionDebugControls.register(event);
+            }
         }
 
         @SubscribeEvent
@@ -91,7 +96,9 @@ public class ClientEvents {
         @SubscribeEvent
         public static void onModelBakingCompleted(ModelEvent.BakingCompleted event) {
             PhantomGrapplingHookRenderUtil.clearModelCache();
-            GrapplingHookRenderPathDebug.logLifecycle("model baking completed; resource reload may have rebuilt client renderers");
+            if (GrapplingHookDebugMode.isEnabled()) {
+                GrapplingHookRenderPathDebug.logLifecycle("model baking completed; resource reload may have rebuilt client renderers");
+            }
         }
 
         @SubscribeEvent
@@ -104,7 +111,9 @@ public class ClientEvents {
 
         @SubscribeEvent
         public static void onModifyPatchedRenderers(PatchedRenderersEvent.Modify event) {
-            GrapplingHookRenderPathDebug.logLifecycle("PatchedRenderersEvent.Modify fired; installing Epic Fight grappling hook layers");
+            if (GrapplingHookDebugMode.isEnabled()) {
+                GrapplingHookRenderPathDebug.logLifecycle("PatchedRenderersEvent.Modify fired; installing Epic Fight grappling hook layers");
+            }
             EpicFightGrapplingHookArmLayer.onModifyPatchedRenderers(event);
         }
     }
@@ -113,6 +122,9 @@ public class ClientEvents {
     public static class ForgeBusEvents {
         private static boolean previewYawLocked;
         private static float lockedPreviewYaw;
+        private static boolean grapplingHookKeyDown;
+        private static int grapplingHookSequence;
+        private static int activeGrapplingHookSequence;
 
         @SubscribeEvent
         public static void onClientTick(TickEvent.ClientTickEvent event) {
@@ -121,22 +133,48 @@ public class ClientEvents {
             }
             GrapplingHookOffhandRenderState.restoreAll();
             ClientGrapplingHookJumpInputSync.tick();
-            while (USE_GRAPPLING_HOOK.consumeClick()) {
+            Minecraft minecraft = Minecraft.getInstance();
+            boolean keyDown = minecraft.player != null && minecraft.level != null && USE_GRAPPLING_HOOK.isDown();
+            if (keyDown && !grapplingHookKeyDown) {
+                activeGrapplingHookSequence = ++grapplingHookSequence;
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
                 ClientGrapplingHookSprintRestore.recordUseAttempt();
                 ClientGrapplingHookFovEffect.recordUseAttempt();
-                ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(), new UseGrapplingHookPacket());
+                ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
+                        new UseGrapplingHookPacket(
+                                UseGrapplingHookPacket.Action.PRESS,
+                                activeGrapplingHookSequence,
+                                minecraft.player.getYRot(),
+                                minecraft.player.getXRot()));
+            } else if (!keyDown && grapplingHookKeyDown) {
+                ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
+                        new UseGrapplingHookPacket(
+                                UseGrapplingHookPacket.Action.RELEASE,
+                                activeGrapplingHookSequence,
+                                minecraft.player.getYRot(),
+                                minecraft.player.getXRot()));
             }
+            grapplingHookKeyDown = keyDown;
             if (ClientGrapplingHookSprintRestore.hasWork()) {
                 ClientGrapplingHookSprintRestore.tick();
             }
             if (ClientGrapplingHookWallRunBridge.hasOpenWindow()) {
                 ClientGrapplingHookWallRunBridge.tick();
             }
-            GrapplingHookRenderDebugControls.tick();
-            GrapplingHookLineDebugControls.tick();
-            if (Config.debugLogging) {
-                ClientGrapplingHookDebugLogger.tick();
+            if (GrapplingHookDebugMode.isEnabled()) {
+                GrapplingHookRenderDebugControls.tick();
+                GrapplingHookLineDebugControls.tick();
+                ClientSlowMotionDebugControls.tick();
+                if (Config.debugLogging) {
+                    ClientGrapplingHookDebugLogger.tick();
+                }
+            }
+        }
+
+        @SubscribeEvent
+        public static void onKeyInput(InputEvent.Key event) {
+            if (GrapplingHookDebugMode.isEnabled()) {
+                ClientSlowMotionDebugControls.onKeyInput(event.getKey(), event.getAction());
             }
         }
 

@@ -4,10 +4,12 @@ import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.config.ModConfigEvent;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookDebugMode;
 
 @Mod.EventBusSubscriber(modid = Epicawaken_grappling_hook.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class Config {
     private static final int BASE_HOOK_LOCK_DELAY_TICKS = 11;
+    private static final int MIN_MISSED_HOOK_VISUAL_TICKS = 18;
     private static final double BASE_PROJECTILE_SPEED = 2.0D;
 
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
@@ -15,7 +17,6 @@ public class Config {
     private static final ForgeConfigSpec.IntValue GRAPPLING_HOOK_COOLDOWN;
     private static final ForgeConfigSpec.DoubleValue HOOK_PULL_ANIMATION_SPEED;
     private static final ForgeConfigSpec.DoubleValue PROJECTILE_INACCURACY;
-    private static final ForgeConfigSpec.IntValue MAX_LIFE_TICKS;
     private static final ForgeConfigSpec.BooleanValue DEBUG_LOGGING;
     private static final ForgeConfigSpec.BooleanValue DISABLE_PARCOOL_CRAWL_AND_SLIDE_DURING_HOOK;
     private static final ForgeConfigSpec.IntValue MISSED_HOOK_GROUND_ANIMATION_DURATION_TICKS;
@@ -53,10 +54,33 @@ public class Config {
     private static final ForgeConfigSpec.DoubleValue ENTITY_PULL_UP_BOOST;
     private static final ForgeConfigSpec.BooleanValue RESPECT_KNOCKBACK_RESISTANCE;
 
+    private static final ForgeConfigSpec.IntValue PHANTOM_SWING_HOLD_THRESHOLD_TICKS;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_MIN_ROPE_LENGTH;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_HOOK_LAUNCH_RANGE;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_HORIZONTAL_PULL_STRENGTH;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_MAX_HORIZONTAL_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_BASE_UP_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_HEIGHT_UP_SCALE;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_MAX_UP_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_MAX_TOTAL_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_TARGET_ROPE_LENGTH;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_REEL_IN_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_INITIAL_BOOST;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_CONSTRAINT_STRENGTH;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_MAX_CORRECTION_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_MAX_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_PREHOLD_FALL_MULTIPLIER;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_PREHOLD_MAX_FALL_SPEED;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_ENERGY_RETENTION;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_ENERGY_GAIN_PER_TICK;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_ENERGY_CAP_RATIO;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_MAX_ANGLE_DEGREES;
+    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_PER_SWING_ENERGY_MULTIPLIER;
+
     static {
         BUILDER.push("common");
         GRAPPLING_HOOK_COOLDOWN = BUILDER
-                .comment("Cooldown in ticks after using the Curios grappling hook.")
+                .comment("Cooldown in ticks after using the normal grappling hook. The Phantom Grappling Hook has no cooldown.")
                 .translation("config.epicawaken_grappling_hook.grapplingHookCooldown")
                 .defineInRange("grapplingHookCooldown", 30, 0, 1200);
         HOOK_PULL_ANIMATION_SPEED = BUILDER
@@ -67,14 +91,14 @@ public class Config {
                 .comment("Projectile inaccuracy for the grappling hook fired by hook_pull. Awaken default is 1.0. Lower values are more accurate.")
                 .translation("config.epicawaken_grappling_hook.projectileInaccuracy")
                 .defineInRange("projectileInaccuracy", 1.0D, 0.0D, 5.0D);
-        MAX_LIFE_TICKS = BUILDER
-                .comment("Maximum lifetime in ticks for the grappling hook projectile.")
-                .translation("config.epicawaken_grappling_hook.maxLifeTicks")
-                .defineInRange("maxLifeTicks", 30, 10, 100);
-        DEBUG_LOGGING = BUILDER
-                .comment("Enables verbose grappling hook debug logs. Keep this disabled during normal gameplay.")
-                .translation("config.epicawaken_grappling_hook.debugLogging")
-                .define("debugLogging", false);
+        if (GrapplingHookDebugMode.isEnabled()) {
+            DEBUG_LOGGING = BUILDER
+                    .comment("Enables verbose grappling hook debug logs in a Forge development environment.")
+                    .translation("config.epicawaken_grappling_hook.debugLogging")
+                    .define("debugLogging", false);
+        } else {
+            DEBUG_LOGGING = null;
+        }
         DISABLE_PARCOOL_CRAWL_AND_SLIDE_DURING_HOOK = BUILDER
                 .comment("Prevents Parcool crawl and slide while grappling hook animations, pulls, or ground slides are active.")
                 .translation("config.epicawaken_grappling_hook.disableParcoolCrawlAndSlideDuringHook")
@@ -127,11 +151,11 @@ public class Config {
                 .translation("config.epicawaken_grappling_hook.groundHookTargetPullMaxSpeed")
                 .defineInRange("groundHookTargetPullMaxSpeed", 1.2D, 0.05D, 5.0D);
         GROUND_HOOK_TARGET_PULL_ARRIVAL_DISTANCE = BUILDER
-                .comment("Distance from the hooked ground target at which HOOK_GROUND is considered arrived.")
+                .comment("Additional arrival radius for HOOK_GROUND. The built-in collision-safe contact tolerance still applies when this is lower.")
                 .translation("config.epicawaken_grappling_hook.groundHookTargetPullArrivalDistance")
                 .defineInRange("groundHookTargetPullArrivalDistance", 0.0D, 0.0D, 3.0D);
         GROUND_HOOK_TARGET_PULL_SNAP_TO_TARGET = BUILDER
-                .comment("Whether the player is snapped to the safe ground target when close enough or when the ground pull times out.")
+                .comment("Whether the player is snapped to the safe ground target if the ground pull reaches its time limit.")
                 .translation("config.epicawaken_grappling_hook.groundHookTargetPullSnapToTarget")
                 .define("groundHookTargetPullSnapToTarget", true);
         BUILDER.pop();
@@ -154,11 +178,11 @@ public class Config {
                 .translation("config.epicawaken_grappling_hook.airHookTargetPullMaxSpeed")
                 .defineInRange("airHookTargetPullMaxSpeed", 1.2D, 0.05D, 5.0D);
         AIR_HOOK_TARGET_PULL_ARRIVAL_DISTANCE = BUILDER
-                .comment("Distance from the high-terrain target at which the player is considered arrived.")
+                .comment("Additional arrival radius for HOOK_AIR terrain pulling. The built-in collision-safe contact tolerance still applies when this is lower.")
                 .translation("config.epicawaken_grappling_hook.airHookTargetPullArrivalDistance")
                 .defineInRange("airHookTargetPullArrivalDistance", 0.0D, 0.0D, 3.0D);
         AIR_HOOK_TARGET_PULL_SNAP_TO_TARGET = BUILDER
-                .comment("Whether the player is snapped to the safe high-terrain target when close enough or when the pull times out.")
+                .comment("Whether the player is snapped to the safe high-terrain target if the pull reaches its time limit.")
                 .translation("config.epicawaken_grappling_hook.airHookTargetPullSnapToTarget")
                 .define("airHookTargetPullSnapToTarget", true);
         AIR_HOOK_FOV_HOLD_TAIL_TICKS = BUILDER
@@ -212,6 +236,97 @@ public class Config {
                 .translation("config.epicawaken_grappling_hook.respectKnockbackResistance")
                 .define("respectKnockbackResistance", true);
         BUILDER.pop();
+
+        BUILDER.push("phantom_swing");
+        PHANTOM_SWING_HOLD_THRESHOLD_TICKS = BUILDER
+                .comment("How many ticks the grappling hook key must remain held before a Phantom Grappling Hook switches from normal use to swinging.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingHoldThresholdTicks")
+                .defineInRange("phantomSwingHoldThresholdTicks", 7, 2, 20);
+        PHANTOM_SWING_MIN_ROPE_LENGTH = BUILDER
+                .comment("Minimum rope length when a Phantom Grappling Hook starts swinging.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingMinRopeLength")
+                .defineInRange("phantomSwingMinRopeLength", 2.0D, 0.5D, 16.0D);
+        PHANTOM_HOOK_LAUNCH_RANGE = BUILDER
+                .comment("Maximum launch range for a Phantom Grappling Hook.")
+                .translation("config.epicawaken_grappling_hook.phantomHookLaunchRange")
+                .defineInRange("phantomHookLaunchRange", 12.0D, 2.0D, 64.0D);
+        PHANTOM_MISSED_AIR_HORIZONTAL_PULL_STRENGTH = BUILDER
+                .comment("Horizontal pull strength used when a short-pressed Phantom Grappling Hook anchors in empty air.")
+                .translation("config.epicawaken_grappling_hook.phantomMissedAirHorizontalPullStrength")
+                .defineInRange("phantomMissedAirHorizontalPullStrength", 0.24D, 0.0D, 2.0D);
+        PHANTOM_MISSED_AIR_MAX_HORIZONTAL_SPEED = BUILDER
+                .comment("Maximum horizontal speed after a Phantom Grappling Hook short-press air pull.")
+                .translation("config.epicawaken_grappling_hook.phantomMissedAirMaxHorizontalSpeed")
+                .defineInRange("phantomMissedAirMaxHorizontalSpeed", 2.2D, 0.1D, 8.0D);
+        PHANTOM_MISSED_AIR_BASE_UP_SPEED = BUILDER
+                .comment("Base upward speed for a Phantom Grappling Hook short-press air pull.")
+                .translation("config.epicawaken_grappling_hook.phantomMissedAirBaseUpSpeed")
+                .defineInRange("phantomMissedAirBaseUpSpeed", 0.9D, 0.0D, 4.0D);
+        PHANTOM_MISSED_AIR_HEIGHT_UP_SCALE = BUILDER
+                .comment("Additional upward speed per block that the empty-air anchor is above the player.")
+                .translation("config.epicawaken_grappling_hook.phantomMissedAirHeightUpScale")
+                .defineInRange("phantomMissedAirHeightUpScale", 0.08D, 0.0D, 1.0D);
+        PHANTOM_MISSED_AIR_MAX_UP_SPEED = BUILDER
+                .comment("Maximum upward speed after a Phantom Grappling Hook short-press air pull.")
+                .translation("config.epicawaken_grappling_hook.phantomMissedAirMaxUpSpeed")
+                .defineInRange("phantomMissedAirMaxUpSpeed", 1.65D, 0.1D, 6.0D);
+        PHANTOM_MISSED_AIR_MAX_TOTAL_SPEED = BUILDER
+                .comment("Maximum combined speed after a Phantom Grappling Hook short-press air pull.")
+                .translation("config.epicawaken_grappling_hook.phantomMissedAirMaxTotalSpeed")
+                .defineInRange("phantomMissedAirMaxTotalSpeed", 2.8D, 0.1D, 10.0D);
+        PHANTOM_SWING_TARGET_ROPE_LENGTH = BUILDER
+                .comment("Target rope length after a Phantom Grappling Hook enters swing mode.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingMaxRopeLength")
+                .defineInRange("phantomSwingMaxRopeLength", 7.0D, 2.0D, 64.0D);
+        PHANTOM_SWING_REEL_IN_SPEED = BUILDER
+                .comment("Rope length removed per tick while a Phantom Grappling Hook reels in after entering swing mode.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingReelInSpeed")
+                .defineInRange("phantomSwingReelInSpeed", 0.7D, 0.0D, 4.0D);
+        PHANTOM_SWING_INITIAL_BOOST = BUILDER
+                .comment("Initial tangential speed added when a Phantom Grappling Hook begins swinging.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingInitialBoost")
+                .defineInRange("phantomSwingInitialBoost", 1.15D, 0.0D, 3.0D);
+        PHANTOM_SWING_CONSTRAINT_STRENGTH = BUILDER
+                .comment("Strength used to pull a swinging player back inside the rope radius.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingConstraintStrength")
+                .defineInRange("phantomSwingConstraintStrength", 0.35D, 0.05D, 1.5D);
+        PHANTOM_SWING_MAX_CORRECTION_SPEED = BUILDER
+                .comment("Maximum inward correction speed applied by the Phantom Grappling Hook rope constraint.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingMaxCorrectionSpeed")
+                .defineInRange("phantomSwingMaxCorrectionSpeed", 0.7D, 0.05D, 2.0D);
+        PHANTOM_SWING_MAX_SPEED = BUILDER
+                .comment("Maximum total player speed while swinging from a Phantom Grappling Hook.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingMaxSpeed")
+                .defineInRange("phantomSwingMaxSpeed", 3.2D, 0.2D, 5.0D);
+        PHANTOM_SWING_PREHOLD_FALL_MULTIPLIER = BUILDER
+                .comment("Multiplier applied to downward velocity while holding a Phantom Grappling Hook before swing mode starts.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingPreholdFallMultiplier")
+                .defineInRange("phantomSwingPreholdFallMultiplier", 0.65D, 0.1D, 1.0D);
+        PHANTOM_SWING_PREHOLD_MAX_FALL_SPEED = BUILDER
+                .comment("Maximum downward speed while holding a Phantom Grappling Hook before swing mode starts.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingPreholdMaxFallSpeed")
+                .defineInRange("phantomSwingPreholdMaxFallSpeed", 0.12D, 0.01D, 1.0D);
+        PHANTOM_SWING_ENERGY_RETENTION = BUILDER
+                .comment("Fraction of Phantom Grappling Hook swing energy retained each tick. Lower values add gentle per-tick speed damping.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingEnergyRetention")
+                .defineInRange("phantomSwingEnergyRetention", 0.995D, 0.8D, 1.0D);
+        PHANTOM_SWING_ENERGY_GAIN_PER_TICK = BUILDER
+                .comment("Maximum swing energy gained per tick while descending, scaled by how steeply the player is moving downward.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingEnergyGainPerTick")
+                .defineInRange("phantomSwingEnergyGainPerTick", 0.03D, 0.0D, 0.25D);
+        PHANTOM_SWING_ENERGY_CAP_RATIO = BUILDER
+                .comment("Maximum fraction of the energy needed to loop over the top of the swing anchor.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingEnergyCapRatio")
+                .defineInRange("phantomSwingEnergyCapRatio", 0.55D, 0.1D, 1.0D);
+        PHANTOM_SWING_MAX_ANGLE_DEGREES = BUILDER
+                .comment("Maximum swing angle measured from directly below the anchor. Values below 90 keep the player below the anchor height.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingMaxAngleDegrees")
+                .defineInRange("phantomSwingMaxAngleDegrees", 95.0D, 45.0D, 120.0D);
+        PHANTOM_SWING_PER_SWING_ENERGY_MULTIPLIER = BUILDER
+                .comment("Energy multiplier applied each time the Phantom Grappling Hook swing reverses direction.")
+                .translation("config.epicawaken_grappling_hook.phantomSwingPerSwingEnergyMultiplier")
+                .defineInRange("phantomSwingPerSwingEnergyMultiplier", 0.95D, 0.5D, 1.0D);
+        BUILDER.pop();
     }
 
     public static final ForgeConfigSpec SPEC = BUILDER.build();
@@ -219,7 +334,6 @@ public class Config {
     public static int grapplingHookCooldown;
     public static double hookPullAnimationSpeed;
     public static double projectileInaccuracy;
-    public static int maxLifeTicks;
     public static boolean debugLogging;
     public static boolean disableParcoolCrawlAndSlideDuringHook;
     public static int missedHookGroundAnimationDurationTicks;
@@ -267,13 +381,35 @@ public class Config {
     public static double entityPullUpBoost;
     public static boolean respectKnockbackResistance;
 
+    public static int phantomSwingHoldThresholdTicks;
+    public static double phantomSwingMinRopeLength;
+    public static double phantomHookLaunchRange;
+    public static double phantomMissedAirHorizontalPullStrength;
+    public static double phantomMissedAirMaxHorizontalSpeed;
+    public static double phantomMissedAirBaseUpSpeed;
+    public static double phantomMissedAirHeightUpScale;
+    public static double phantomMissedAirMaxUpSpeed;
+    public static double phantomMissedAirMaxTotalSpeed;
+    public static double phantomSwingTargetRopeLength;
+    public static double phantomSwingReelInSpeed;
+    public static double phantomSwingInitialBoost;
+    public static double phantomSwingConstraintStrength;
+    public static double phantomSwingMaxCorrectionSpeed;
+    public static double phantomSwingMaxSpeed;
+    public static double phantomSwingPreholdFallMultiplier;
+    public static double phantomSwingPreholdMaxFallSpeed;
+    public static double phantomSwingEnergyRetention;
+    public static double phantomSwingEnergyGainPerTick;
+    public static double phantomSwingEnergyCapRatio;
+    public static double phantomSwingMaxAngleDegrees;
+    public static double phantomSwingPerSwingEnergyMultiplier;
+
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
         grapplingHookCooldown = GRAPPLING_HOOK_COOLDOWN.get();
         hookPullAnimationSpeed = HOOK_PULL_ANIMATION_SPEED.get();
         projectileInaccuracy = PROJECTILE_INACCURACY.get();
-        maxLifeTicks = MAX_LIFE_TICKS.get();
-        debugLogging = DEBUG_LOGGING.get();
+        debugLogging = DEBUG_LOGGING != null && DEBUG_LOGGING.get();
         disableParcoolCrawlAndSlideDuringHook = DISABLE_PARCOOL_CRAWL_AND_SLIDE_DURING_HOOK.get();
         missedHookGroundAnimationDurationTicks = MISSED_HOOK_GROUND_ANIMATION_DURATION_TICKS.get();
 
@@ -311,6 +447,29 @@ public class Config {
         entityPullStrengthMultiplier = ENTITY_PULL_STRENGTH_MULTIPLIER.get();
         entityPullUpBoost = ENTITY_PULL_UP_BOOST.get();
         respectKnockbackResistance = RESPECT_KNOCKBACK_RESISTANCE.get();
+
+        phantomSwingHoldThresholdTicks = PHANTOM_SWING_HOLD_THRESHOLD_TICKS.get();
+        phantomSwingMinRopeLength = PHANTOM_SWING_MIN_ROPE_LENGTH.get();
+        phantomHookLaunchRange = PHANTOM_HOOK_LAUNCH_RANGE.get();
+        phantomMissedAirHorizontalPullStrength = PHANTOM_MISSED_AIR_HORIZONTAL_PULL_STRENGTH.get();
+        phantomMissedAirMaxHorizontalSpeed = PHANTOM_MISSED_AIR_MAX_HORIZONTAL_SPEED.get();
+        phantomMissedAirBaseUpSpeed = PHANTOM_MISSED_AIR_BASE_UP_SPEED.get();
+        phantomMissedAirHeightUpScale = PHANTOM_MISSED_AIR_HEIGHT_UP_SCALE.get();
+        phantomMissedAirMaxUpSpeed = PHANTOM_MISSED_AIR_MAX_UP_SPEED.get();
+        phantomMissedAirMaxTotalSpeed = PHANTOM_MISSED_AIR_MAX_TOTAL_SPEED.get();
+        phantomSwingTargetRopeLength = Math.max(phantomSwingMinRopeLength, Math.min(phantomHookLaunchRange, PHANTOM_SWING_TARGET_ROPE_LENGTH.get()));
+        phantomSwingReelInSpeed = PHANTOM_SWING_REEL_IN_SPEED.get();
+        phantomSwingInitialBoost = PHANTOM_SWING_INITIAL_BOOST.get();
+        phantomSwingConstraintStrength = PHANTOM_SWING_CONSTRAINT_STRENGTH.get();
+        phantomSwingMaxCorrectionSpeed = PHANTOM_SWING_MAX_CORRECTION_SPEED.get();
+        phantomSwingMaxSpeed = PHANTOM_SWING_MAX_SPEED.get();
+        phantomSwingPreholdFallMultiplier = PHANTOM_SWING_PREHOLD_FALL_MULTIPLIER.get();
+        phantomSwingPreholdMaxFallSpeed = PHANTOM_SWING_PREHOLD_MAX_FALL_SPEED.get();
+        phantomSwingEnergyRetention = PHANTOM_SWING_ENERGY_RETENTION.get();
+        phantomSwingEnergyGainPerTick = PHANTOM_SWING_ENERGY_GAIN_PER_TICK.get();
+        phantomSwingEnergyCapRatio = PHANTOM_SWING_ENERGY_CAP_RATIO.get();
+        phantomSwingMaxAngleDegrees = PHANTOM_SWING_MAX_ANGLE_DEGREES.get();
+        phantomSwingPerSwingEnergyMultiplier = PHANTOM_SWING_PER_SWING_ENERGY_MULTIPLIER.get();
     }
 
     public static int getHookLockDelayTicks() {
@@ -319,5 +478,26 @@ public class Config {
 
     public static double getProjectileSpeed() {
         return BASE_PROJECTILE_SPEED * hookPullAnimationSpeed;
+    }
+
+    public static int getMissedHookVisualTicks() {
+        return Math.max(missedHookGroundAnimationDurationTicks, MIN_MISSED_HOOK_VISUAL_TICKS);
+    }
+
+    public static int getNormalHookMaxLifeTicks() {
+        int lockDelayTicks = getHookLockDelayTicks();
+        return Math.max(
+                lockDelayTicks + getMissedHookVisualTicks() + 2,
+                Math.max(
+                        lockDelayTicks + 8 + airHookTargetPullDurationTicks,
+                        lockDelayTicks + 7 + groundHookTargetPullDurationTicks));
+    }
+
+    public static int getHookUseBlockDurationTicks() {
+        return getNormalHookMaxLifeTicks() + 20;
+    }
+
+    public static double getPhantomProjectileSpeed() {
+        return phantomHookLaunchRange / getHookLockDelayTicks();
     }
 }

@@ -16,11 +16,14 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
@@ -34,6 +37,8 @@ import org.com.epicawaken_grappling_hook.util.AirHookArrivalJumpTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookArrivalTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
+import org.com.epicawaken_grappling_hook.util.GrapplingHookUse;
+import org.com.epicawaken_grappling_hook.util.GrapplingSwingPhysics;
 import org.com.epicawaken_grappling_hook.util.GroundHookSlideTracker;
 import org.jetbrains.annotations.NotNull;
 import net.minecraftforge.network.PacketDistributor;
@@ -44,6 +49,10 @@ import yesman.epicfight.world.capabilities.entitypatch.LivingEntityPatch;
 
 public class GrapplingHook extends AbstractArrow {
     private static final EntityDataAccessor<Integer> DATA_VARIANT = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_USE_MODE = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> DATA_SWINGING = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Integer> DATA_SWING_DIRECTION = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_SWING_PHASE_DURATION_TICKS = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
     public static final float PULL_TARGET = 0.22F;
     private static final double AIR_HOOK_MIN_ANGLE_DEGREES = 3.0D;
     private static final double AIR_HOOK_MIN_HEIGHT_ABOVE_EYES = 1.0D;
@@ -52,20 +61,56 @@ public class GrapplingHook extends AbstractArrow {
     private static final double TERRAIN_PULL_VERTICAL_ARRIVAL_DISTANCE = 0.45D;
     private static final double TERRAIN_PULL_OVERSHOOT_DISTANCE = 0.75D;
     private static final double WALL_TARGET_SURFACE_GAP = 0.0D;
+    private static final double WALL_TOP_SURFACE_EPSILON = 0.02D;
+    private static final double WALL_TOP_EDGE_GAP = 0.02D;
+    private static final double WALL_TOP_APPROACH_CLEARANCE = 0.55D;
+    private static final double WALL_TOP_CROSSING_CLEARANCE = 0.06D;
+    private static final double WALL_TOP_APPROACH_HORIZONTAL_DISTANCE = 0.18D;
+    private static final double WALL_TOP_ARRIVAL_HORIZONTAL_DISTANCE = 0.14D;
+    private static final double WALL_TOP_ARRIVAL_VERTICAL_DISTANCE = 0.12D;
+    private static final double SWING_REEL_MAX_DISTANCE_SLACK = 0.75D;
+    private static final int SWING_PHASE_FALLBACK_DURATION_TICKS = 28;
+    private static final int SWING_PHASE_MIN_DURATION_TICKS = 8;
+    private static final int SWING_PHASE_MAX_DURATION_TICKS = 100;
     private static final double[] COLLISION_FREE_TARGET_VERTICAL_OFFSETS = {0.0D, 0.25D, 0.5D, 1.0D, -0.25D};
-    private static final int MISSED_HOOK_MIN_VISUAL_RETRACT_TICKS = 18;
 
     private int life;
     private boolean hooked;
     private HookType hookType = HookType.AIR;
     private Entity hookedEntity;
     private Vec3 terrainTarget;
+    private Vec3 wallTopApproachTarget;
+    private BlockPos wallTopSupportBlock;
+    private double wallTopSupportSurfaceY;
+    private boolean wallTopApproachComplete;
     private Vec3 groundSlideDirection;
     private Vec3 lastTerrainPullVelocity;
     private boolean terrainPullArrived;
     private boolean fovEffectActive;
     private int missedHookAnimationStartLife = -1;
+    private boolean phantomMissedHookPull;
     private double previousTerrainTargetDistance = Double.MAX_VALUE;
+    private int useSequenceId = -1;
+    private boolean lockResolved;
+    private Vec3 swingAnchor;
+    private BlockPos swingAnchorBlock;
+    private double swingRopeLength;
+    private double swingTargetRopeLength;
+    private int swingObstructedTicks;
+    private boolean useFinished;
+    private Vec3 swingForwardDirection;
+    private Vec3 swingPlaneNormal;
+    private int swingTravelDirection = 1;
+    private double swingEnergy;
+    private long swingPhaseStartGameTime;
+    private int swingPhaseDurationTicks = SWING_PHASE_FALLBACK_DURATION_TICKS;
+    private int lastForwardSwingPhaseDurationTicks = -1;
+    private int lastBackwardSwingPhaseDurationTicks = -1;
+    private boolean swingTransitionAnimationStopped;
+    private boolean initialSwingHoldPlayed;
+    private boolean swingAnimationDirectionCalibrated;
+    private int swingAnimationForwardDirection;
+    private AnimationManager.AnimationAccessor<? extends StaticAnimation> activeSwingAnimation;
 
     public GrapplingHook(EntityType<? extends AbstractArrow> entityType, Level level) {
         super(entityType, level);
@@ -75,6 +120,10 @@ public class GrapplingHook extends AbstractArrow {
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(DATA_VARIANT, GrapplingHookVariant.NORMAL.ordinal());
+        this.entityData.define(DATA_USE_MODE, UseMode.NORMAL.ordinal());
+        this.entityData.define(DATA_SWINGING, false);
+        this.entityData.define(DATA_SWING_DIRECTION, 1);
+        this.entityData.define(DATA_SWING_PHASE_DURATION_TICKS, SWING_PHASE_FALLBACK_DURATION_TICKS);
     }
 
     @Override
@@ -108,14 +157,30 @@ public class GrapplingHook extends AbstractArrow {
 
     @Override
     public void tick() {
-        super.tick();
         this.setNoGravity(true);
+        super.tick();
 
         int lockDelayTicks = Config.getHookLockDelayTicks();
-        int missedHookVisualTicks = Math.max(Config.missedHookGroundAnimationDurationTicks, MISSED_HOOK_MIN_VISUAL_RETRACT_TICKS);
-        int maxLifeTicks = Math.max(Config.maxLifeTicks, lockDelayTicks + missedHookVisualTicks + 2);
+        int maxLifeTicks = Config.getNormalHookMaxLifeTicks();
         Entity owner = this.getOwner();
-        if (++this.life > maxLifeTicks || owner == null) {
+        this.life++;
+        if (owner == null) {
+            this.discardHook();
+            return;
+        }
+
+        if (!this.level().isClientSide && owner instanceof ServerPlayer serverPlayer && this.updateUseMode(serverPlayer)) {
+            return;
+        }
+
+        if (this.isSwinging()) {
+            if (!this.level().isClientSide) {
+                this.tickSwing(owner);
+            }
+            return;
+        }
+
+        if (this.life > maxLifeTicks) {
             this.discardHook();
             return;
         }
@@ -125,11 +190,34 @@ public class GrapplingHook extends AbstractArrow {
             this.setPos(this.hookedEntity.getX(), this.hookedEntity.getY(0.8D), this.hookedEntity.getZ());
         }
 
-        if (this.life < lockDelayTicks) {
+        if (!this.level().isClientSide
+                && this.life < lockDelayTicks
+                && this.getVariant().isPhantom()) {
+            this.applyPhantomUseFallBrake(owner);
+        }
+
+        if (this.life < lockDelayTicks || this.getUseMode() == UseMode.PHANTOM_PENDING) {
             return;
         }
 
-        if (this.life == lockDelayTicks) {
+        if (!this.lockResolved) {
+            if (this.getUseMode() == UseMode.PHANTOM_SWING) {
+                if (!this.hooked) {
+                    this.hooked = true;
+                    this.swingAnchor = this.position();
+                    this.swingAnchorBlock = null;
+                    this.setDeltaMovement(Vec3.ZERO);
+                }
+                if (this.hookedEntity == null && this.swingAnchor != null) {
+                    if (!this.level().isClientSide) {
+                        this.startSwing(owner);
+                    }
+                    return;
+                }
+                this.setUseMode(UseMode.NORMAL);
+            }
+
+            this.lockResolved = true;
             if (!this.hooked) {
                 if (this.getVariant().isPhantom()) {
                     this.startPhantomMissedHookPull(owner, lockDelayTicks);
@@ -154,8 +242,350 @@ public class GrapplingHook extends AbstractArrow {
         }
     }
 
+    private void applyPhantomUseFallBrake(Entity owner) {
+        if (!(owner instanceof Player player)
+                || player.onGround()
+                || player.isInWaterOrBubble()
+                || player.isFallFlying()
+                || player.isPassenger()) {
+            return;
+        }
+
+        Vec3 velocity = player.getDeltaMovement();
+        if (velocity.y >= 0.0D) {
+            return;
+        }
+
+        double slowedFallSpeed = Math.max(
+                velocity.y * Config.phantomSwingPreholdFallMultiplier,
+                -Config.phantomSwingPreholdMaxFallSpeed);
+        if (slowedFallSpeed >= velocity.y) {
+            player.setDeltaMovement(velocity.x, slowedFallSpeed, velocity.z);
+            player.hurtMarked = true;
+        }
+    }
+
+    private boolean updateUseMode(ServerPlayer player) {
+        if (this.useSequenceId < 0 || this.getUseMode() == UseMode.NORMAL) {
+            return false;
+        }
+
+        GrapplingHookUse.HoldDecision decision = GrapplingHookUse.getHoldDecision(player, this.useSequenceId);
+        return switch (decision) {
+            case NORMAL -> {
+                this.setUseMode(UseMode.NORMAL);
+                yield false;
+            }
+            case PENDING -> false;
+            case SWING_HELD -> {
+                this.setUseMode(UseMode.PHANTOM_SWING);
+                this.startInitialSwingHoldAnimation(player);
+                yield false;
+            }
+            case SWING_RELEASED -> {
+                this.setUseMode(UseMode.PHANTOM_SWING);
+                this.discardHook();
+                yield true;
+            }
+        };
+    }
+
+    private void stopSwingTransitionAnimation(ServerPlayer player) {
+        LivingEntityPatch<?> entityPatch = EpicFightCapabilities.getEntityPatch(player, LivingEntityPatch.class);
+        if (entityPatch != null) {
+            entityPatch.stopPlaying(ModHookAnimations.HOOK_PULL);
+        }
+    }
+
+    private void startInitialSwingHoldAnimation(ServerPlayer player) {
+        if (this.initialSwingHoldPlayed) {
+            return;
+        }
+
+        if (this.playSwingAnimation(player, ModHookAnimations.HOOK_HOLD)) {
+            this.initialSwingHoldPlayed = true;
+        }
+    }
+
+    private void startForwardSwingAnimation(ServerPlayer player) {
+        AnimationManager.AnimationAccessor<? extends StaticAnimation> animation = this.initialSwingHoldPlayed
+                ? ModHookAnimations.HOOK_HOLD_FORWARD
+                : ModHookAnimations.HOOK_HOLD;
+        if (this.playSwingAnimation(player, animation)) {
+            this.initialSwingHoldPlayed = true;
+        }
+    }
+
+    private void startBackwardSwingAnimation(ServerPlayer player) {
+        this.playSwingAnimation(player, ModHookAnimations.HOOK_HOLD_BACK);
+    }
+
+    private static String swingAnimationName(
+            AnimationManager.AnimationAccessor<? extends StaticAnimation> animation) {
+        if (animation == ModHookAnimations.HOOK_HOLD_FORWARD) {
+            return "hook_hold_forward";
+        }
+        if (animation == ModHookAnimations.HOOK_HOLD_BACK) {
+            return "hook_hold_back";
+        }
+        return "hook_hold";
+    }
+
+    private boolean playSwingAnimation(
+            ServerPlayer player,
+            AnimationManager.AnimationAccessor<? extends StaticAnimation> animation) {
+        LivingEntityPatch<?> entityPatch = EpicFightCapabilities.getEntityPatch(player, LivingEntityPatch.class);
+        if (entityPatch != null) {
+            entityPatch.playAnimationSynchronized(animation, 0.0F);
+            this.activeSwingAnimation = animation;
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info(
+                        "[GrapplingHookSwingAnimationDebug][SERVER] animation played owner={} hook={} animation={} swingDirection={} calibratedForwardDirection={} initialHoldPlayed={}",
+                        player.getId(),
+                        this.getId(),
+                        swingAnimationName(animation),
+                        this.swingTravelDirection,
+                        this.swingAnimationForwardDirection,
+                        this.initialSwingHoldPlayed);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void stopSwingAnimation(ServerPlayer player) {
+        if (this.activeSwingAnimation == null) {
+            return;
+        }
+
+        AnimationManager.AnimationAccessor<? extends StaticAnimation> animation = this.activeSwingAnimation;
+        this.activeSwingAnimation = null;
+        LivingEntityPatch<?> entityPatch = EpicFightCapabilities.getEntityPatch(player, LivingEntityPatch.class);
+        if (entityPatch != null) {
+            entityPatch.stopPlaying(animation);
+        }
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info(
+                    "[GrapplingHookSwingAnimationDebug][SERVER] animation stopped owner={} hook={} animation={} swingDirection={} calibratedForwardDirection={}",
+                    player.getId(),
+                    this.getId(),
+                    swingAnimationName(animation),
+                    this.swingTravelDirection,
+                    this.swingAnimationForwardDirection);
+        }
+    }
+
+    private void updateSwingDirectionAnimation(ServerPlayer player, int direction) {
+        if (!this.swingAnimationDirectionCalibrated) {
+            return;
+        }
+        if (direction == this.swingAnimationForwardDirection) {
+            this.startForwardSwingAnimation(player);
+        } else {
+            this.startBackwardSwingAnimation(player);
+        }
+    }
+
+    private void recordCompletedSwingPhase(int direction, int durationTicks) {
+        if (direction == this.swingAnimationForwardDirection) {
+            this.lastForwardSwingPhaseDurationTicks = durationTicks;
+        } else {
+            this.lastBackwardSwingPhaseDurationTicks = durationTicks;
+        }
+    }
+
+    private int predictSwingPhaseDuration(int direction, int fallbackDurationTicks) {
+        int sameDirectionDuration = direction == this.swingAnimationForwardDirection
+                ? this.lastForwardSwingPhaseDurationTicks
+                : this.lastBackwardSwingPhaseDurationTicks;
+        return sameDirectionDuration > 0 ? sameDirectionDuration : fallbackDurationTicks;
+    }
+
+    private int defaultSwingPhaseDurationTicks() {
+        if (ModHookAnimations.HOOK_HOLD == null || !ModHookAnimations.HOOK_HOLD.isPresent()) {
+            return SWING_PHASE_FALLBACK_DURATION_TICKS;
+        }
+        return Mth.clamp(
+                Mth.ceil(ModHookAnimations.HOOK_HOLD.get().getTotalTime() * 20.0F),
+                SWING_PHASE_MIN_DURATION_TICKS,
+                SWING_PHASE_MAX_DURATION_TICKS);
+    }
+
+    private void startSwing(Entity owner) {
+        if (this.swingAnchor == null || !(owner instanceof ServerPlayer serverPlayer)) {
+            this.discardHook();
+            return;
+        }
+        if (!GrapplingHookUse.hasEquippedVariant(serverPlayer, GrapplingHookVariant.PHANTOM)) {
+            this.discardHook();
+            return;
+        }
+
+        this.lockResolved = true;
+        this.hooked = true;
+        this.hookType = HookType.AIR;
+        this.terrainTarget = null;
+        this.clearWallTopTarget();
+        this.setDeltaMovement(Vec3.ZERO);
+        this.setPos(this.swingAnchor.x, this.swingAnchor.y, this.swingAnchor.z);
+        this.inGround = true;
+        this.swingRopeLength = GrapplingSwingPhysics.calculateInitialRopeLength(owner, this.swingAnchor);
+        this.swingTargetRopeLength = Math.min(this.swingRopeLength, Config.phantomSwingTargetRopeLength);
+        if (this.swingForwardDirection == null || this.swingForwardDirection.lengthSqr() < 1.0E-8D) {
+            this.swingForwardDirection = horizontalLookDirection(owner);
+        }
+        this.swingPlaneNormal = GrapplingSwingPhysics.calculateSwingPlaneNormal(
+                owner,
+                this.swingAnchor,
+                this.swingForwardDirection);
+        this.entityData.set(DATA_SWINGING, true);
+        GrapplingHookParcoolBlocker.block(owner, 2);
+        this.syncTerrainPullArrival(owner);
+        this.startPullFovEffect(owner);
+        this.swingTravelDirection = GrapplingSwingPhysics.calculateInitialTravelDirection(
+                owner,
+                this.swingAnchor,
+                this.swingPlaneNormal);
+        this.entityData.set(DATA_SWING_DIRECTION, this.swingTravelDirection);
+        this.swingPhaseStartGameTime = this.level().getGameTime();
+        this.swingPhaseDurationTicks = this.defaultSwingPhaseDurationTicks();
+        this.entityData.set(DATA_SWING_PHASE_DURATION_TICKS, this.swingPhaseDurationTicks);
+        this.startInitialSwingHoldAnimation(serverPlayer);
+        GrapplingSwingPhysics.applyInitialBoost(
+                owner,
+                this.swingAnchor,
+                this.swingPlaneNormal,
+                this.swingTravelDirection);
+        this.swingEnergy = GrapplingSwingPhysics.calculateInitialEnergy(
+                owner,
+                this.swingAnchor,
+                this.swingRopeLength,
+                this.swingPlaneNormal);
+
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookSwingDebug][SERVER] swing started owner={} hook={} sequence={} anchor={} ropeLength={} targetRopeLength={} configuredTargetRopeLength={} ownerPos={} ownerVelocity={}",
+                    owner.getId(),
+                    this.getId(),
+                    this.useSequenceId,
+                    this.swingAnchor,
+                    this.swingRopeLength,
+                    this.swingTargetRopeLength,
+                    Config.phantomSwingTargetRopeLength,
+                    owner.position(),
+                    owner.getDeltaMovement());
+        }
+    }
+
+    private void tickSwing(Entity owner) {
+        if (!(owner instanceof ServerPlayer serverPlayer)
+                || !serverPlayer.isAlive()
+                || serverPlayer.isSpectator()
+                || this.swingAnchor == null
+                || !GrapplingHookUse.hasEquippedVariant(serverPlayer, GrapplingHookVariant.PHANTOM)) {
+            this.discardHook();
+            return;
+        }
+
+        if (this.swingAnchorBlock != null
+                && this.level().getBlockState(this.swingAnchorBlock).getCollisionShape(this.level(), this.swingAnchorBlock).isEmpty()) {
+            this.discardHook();
+            return;
+        }
+
+        GrapplingHookParcoolBlocker.block(owner, 2);
+        this.setPos(this.swingAnchor.x, this.swingAnchor.y, this.swingAnchor.z);
+        if (this.swingRopeLength > this.swingTargetRopeLength) {
+            double actualDistance = GrapplingSwingPhysics.attachmentPosition(owner).distanceTo(this.swingAnchor);
+            double desiredRopeLength = Math.max(
+                    this.swingTargetRopeLength,
+                    this.swingRopeLength - Config.phantomSwingReelInSpeed);
+            double minimumRopeLengthForCurrentDistance = Math.max(
+                    this.swingTargetRopeLength,
+                    actualDistance - SWING_REEL_MAX_DISTANCE_SLACK);
+            this.swingRopeLength = Math.min(
+                    this.swingRopeLength,
+                    Math.max(desiredRopeLength, minimumRopeLengthForCurrentDistance));
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info(
+                        "[GrapplingHookSwingDebug][SERVER] reeling owner={} hook={} ropeLength={} targetRopeLength={} actualDistance={}",
+                        owner.getId(),
+                        this.getId(),
+                        this.swingRopeLength,
+                        this.swingTargetRopeLength,
+                        actualDistance);
+            }
+        }
+        GrapplingSwingPhysics.SwingResult swingResult = GrapplingSwingPhysics.tick(
+                owner,
+                this.swingAnchor,
+                this.swingRopeLength,
+                this.swingPlaneNormal,
+                this.swingEnergy,
+                this.swingTravelDirection);
+        this.swingEnergy = swingResult.energy();
+        int previousTravelDirection = this.swingTravelDirection;
+        this.swingTravelDirection = swingResult.travelDirection();
+        long currentGameTime = this.level().getGameTime();
+        if (!this.swingAnimationDirectionCalibrated) {
+            this.swingAnimationDirectionCalibrated = true;
+            this.swingAnimationForwardDirection = this.swingTravelDirection;
+            this.swingPhaseStartGameTime = currentGameTime;
+            this.entityData.set(DATA_SWING_DIRECTION, this.swingTravelDirection);
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info(
+                        "[GrapplingHookSwingAnimationDebug][SERVER] direction calibrated owner={} hook={} forwardDirection={} initialDirection={} ropeLength={} velocity={}",
+                        owner.getId(),
+                        this.getId(),
+                        this.swingAnimationForwardDirection,
+                        previousTravelDirection,
+                        this.swingRopeLength,
+                        swingResult.velocity());
+            }
+        } else if (this.swingTravelDirection != previousTravelDirection) {
+            int completedPhaseDuration = Mth.clamp(
+                    (int) Math.max(1L, currentGameTime - this.swingPhaseStartGameTime),
+                    SWING_PHASE_MIN_DURATION_TICKS,
+                    SWING_PHASE_MAX_DURATION_TICKS);
+            this.recordCompletedSwingPhase(previousTravelDirection, completedPhaseDuration);
+            int predictedPhaseDuration = this.predictSwingPhaseDuration(
+                    this.swingTravelDirection,
+                    completedPhaseDuration);
+            this.swingPhaseStartGameTime = currentGameTime;
+            this.swingPhaseDurationTicks = predictedPhaseDuration;
+            this.entityData.set(DATA_SWING_PHASE_DURATION_TICKS, predictedPhaseDuration);
+            this.entityData.set(DATA_SWING_DIRECTION, this.swingTravelDirection);
+            this.updateSwingDirectionAnimation(serverPlayer, this.swingTravelDirection);
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info(
+                        "[GrapplingHookSwingAnimationDebug][SERVER] direction changed owner={} hook={} direction={} forwardDirection={} completedPhaseDurationTicks={} predictedPhaseDurationTicks={} lastForwardPhaseDurationTicks={} lastBackwardPhaseDurationTicks={} ropeLength={} energy={}",
+                        owner.getId(),
+                        this.getId(),
+                        this.swingTravelDirection,
+                        this.swingAnimationForwardDirection,
+                        completedPhaseDuration,
+                        predictedPhaseDuration,
+                        this.lastForwardSwingPhaseDurationTicks,
+                        this.lastBackwardSwingPhaseDurationTicks,
+                        this.swingRopeLength,
+                        this.swingEnergy);
+            }
+        }
+        owner.setDeltaMovement(swingResult.velocity());
+    }
+
+    private boolean isSwingPathObstructed(Entity owner) {
+        BlockHitResult hitResult = this.level().clip(new ClipContext(
+                GrapplingSwingPhysics.attachmentPosition(owner),
+                this.swingAnchor,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                owner));
+        return hitResult.getType() == HitResult.Type.BLOCK && !hitResult.getBlockPos().equals(this.swingAnchorBlock);
+    }
+
     private void startPhantomMissedHookPull(Entity owner, int lockDelayTicks) {
         this.hooked = true;
+        this.phantomMissedHookPull = true;
         this.setDeltaMovement(Vec3.ZERO);
         this.lockHookType();
         if (Config.debugLogging) {
@@ -198,7 +628,7 @@ public class GrapplingHook extends AbstractArrow {
         Entity owner = this.getOwner();
         this.blockMissedHookForwardMovement(owner);
         int elapsedTicks = this.missedHookAnimationStartLife >= 0 ? this.life - this.missedHookAnimationStartLife : this.life - lockDelayTicks;
-        int cleanupTicks = Math.max(Config.missedHookGroundAnimationDurationTicks, MISSED_HOOK_MIN_VISUAL_RETRACT_TICKS);
+        int cleanupTicks = Config.getMissedHookVisualTicks();
         if (elapsedTicks >= cleanupTicks) {
             if (Config.debugLogging) {
                 Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] cleaned up missed hook projectile owner={} hookLife={} elapsedTicks={} cleanupTicks={} hookPos={} ownerPos={}",
@@ -315,7 +745,11 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         if (this.life == lockDelayTicks + 6) {
-            this.hookPull(this.getOwner(), (float) Config.airPullStrength);
+            if (this.phantomMissedHookPull && this.getVariant().isPhantom()) {
+                this.applyPhantomMissedAirPull(this.getOwner());
+            } else {
+                this.hookPull(this.getOwner(), (float) Config.airPullStrength);
+            }
             return;
         }
 
@@ -443,7 +877,7 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     private void startGroundHookSlide(Entity owner) {
-        if (owner == null || this.hookType != HookType.GROUND) {
+        if (owner == null || this.hookType != HookType.GROUND || this.isWallTopTerrainTarget()) {
             return;
         }
 
@@ -523,6 +957,68 @@ public class GrapplingHook extends AbstractArrow {
         owner.hurtMarked = true;
     }
 
+    private void applyPhantomMissedAirPull(Entity owner) {
+        if (owner == null) {
+            return;
+        }
+
+        Vec3 oldVelocity = owner.getDeltaMovement();
+        Vec3 toAnchor = this.position().subtract(owner.position());
+        Vec3 horizontalToAnchor = new Vec3(toAnchor.x, 0.0D, toAnchor.z);
+        double horizontalDistance = horizontalToAnchor.length();
+        double horizontalPull = Math.min(
+                Config.phantomMissedAirMaxHorizontalSpeed,
+                horizontalDistance * Config.phantomMissedAirHorizontalPullStrength);
+
+        Vec3 horizontalVelocity = new Vec3(oldVelocity.x, 0.0D, oldVelocity.z);
+        if (horizontalDistance > 1.0E-6D && horizontalPull > 0.0D) {
+            horizontalVelocity = horizontalVelocity.add(horizontalToAnchor.scale(horizontalPull / horizontalDistance));
+        }
+        if (horizontalVelocity.lengthSqr() > Config.phantomMissedAirMaxHorizontalSpeed * Config.phantomMissedAirMaxHorizontalSpeed) {
+            horizontalVelocity = horizontalVelocity.normalize().scale(Config.phantomMissedAirMaxHorizontalSpeed);
+        }
+
+        double maxTotalSpeed = Math.max(0.1D, Config.phantomMissedAirMaxTotalSpeed);
+        double maxUpSpeed = Math.min(Config.phantomMissedAirMaxUpSpeed, maxTotalSpeed);
+        double anchorHeight = Math.max(0.0D, toAnchor.y);
+        double targetUpSpeed = Mth.clamp(
+                Config.phantomMissedAirBaseUpSpeed + anchorHeight * Config.phantomMissedAirHeightUpScale,
+                0.0D,
+                maxUpSpeed);
+        double verticalVelocity = Mth.clamp(Math.max(oldVelocity.y, targetUpSpeed), -maxTotalSpeed, maxUpSpeed);
+        double horizontalAllowance = Math.sqrt(Math.max(0.0D, maxTotalSpeed * maxTotalSpeed - verticalVelocity * verticalVelocity));
+        if (horizontalVelocity.lengthSqr() > horizontalAllowance * horizontalAllowance) {
+            horizontalVelocity = horizontalAllowance > 1.0E-6D
+                    ? horizontalVelocity.normalize().scale(horizontalAllowance)
+                    : Vec3.ZERO;
+        }
+
+        Vec3 newVelocity = new Vec3(horizontalVelocity.x, verticalVelocity, horizontalVelocity.z);
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookPhantomAirPullDebug][{}] applied owner={} hookLife={} hookPos={} ownerPos={} toAnchor={} anchorHeight={} horizontalDistance={} horizontalPull={} targetUpSpeed={} oldVelocity={} newVelocity={} maxHorizontalSpeed={} maxUpSpeed={} maxTotalSpeed={}",
+                    this.level().isClientSide ? "CLIENT" : "SERVER",
+                    owner.getId(),
+                    this.life,
+                    this.position(),
+                    owner.position(),
+                    toAnchor,
+                    anchorHeight,
+                    horizontalDistance,
+                    horizontalPull,
+                    targetUpSpeed,
+                    oldVelocity,
+                    newVelocity,
+                    Config.phantomMissedAirMaxHorizontalSpeed,
+                    maxUpSpeed,
+                    maxTotalSpeed);
+        }
+
+        this.startPullFovEffect(owner);
+        owner.setDeltaMovement(newVelocity);
+        owner.fallDistance = 0.0F;
+        owner.hurtMarked = true;
+    }
+
     private void pullHookedEntityToOwner(float speedScale) {
         Entity owner = this.getOwner();
         if (owner != null && this.hookedEntity != null && this.hookedEntity.isAlive()) {
@@ -537,9 +1033,13 @@ public class GrapplingHook extends AbstractArrow {
             return true;
         }
 
-        Vec3 delta = this.terrainTarget.subtract(owner.position());
+        Vec3 activeTarget = this.getActiveTerrainPullTarget(owner);
+        Vec3 delta = activeTarget.subtract(owner.position());
         double distance = delta.length();
-        if (this.hookType == HookType.GROUND && Config.groundHookSlideEnabled && distance <= Config.groundHookSlideStartDistance) {
+        if (!this.isWallTopTerrainTarget()
+                && this.hookType == HookType.GROUND
+                && Config.groundHookSlideEnabled
+                && distance <= Config.groundHookSlideStartDistance) {
             if (Config.debugLogging) {
                 Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookSlideDebug][SERVER] ground target pull pre-start slide owner={} hookLife={} distance={} startDistance={} horizontalDistance={} verticalDistance={} ownerPos={} target={} ownerVelocity={}",
                         owner.getId(),
@@ -549,14 +1049,18 @@ public class GrapplingHook extends AbstractArrow {
                         horizontalDistance(delta),
                         Math.abs(delta.y),
                         owner.position(),
-                        this.terrainTarget,
+                        activeTarget,
                         owner.getDeltaMovement());
             }
             this.markTerrainPullArrived(owner);
             return false;
         }
 
-        if ((this.hookType == HookType.AIR || this.hookType == HookType.GROUND) && this.hasReachedTerrainTarget(delta, distance)) {
+        boolean reachedTarget = this.isWallTopTerrainTarget()
+                ? this.wallTopApproachComplete && this.hasReachedWallTopTerrainTarget(owner, delta)
+                : (this.hookType == HookType.AIR || this.hookType == HookType.GROUND)
+                && this.hasReachedTerrainTarget(delta, distance);
+        if (reachedTarget) {
             if (Config.debugLogging) {
                 Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookDebug][SERVER] {} terrain target reached life={} distance={} horizontalDistance={} verticalDistance={} previousDistance={} target={} ownerPos={}",
                         this.hookType,
@@ -565,7 +1069,7 @@ public class GrapplingHook extends AbstractArrow {
                         horizontalDistance(delta),
                         Math.abs(delta.y),
                         this.previousTerrainTargetDistance,
-                        this.terrainTarget,
+                        activeTarget,
                         owner.position());
             }
             this.markTerrainPullArrived(owner);
@@ -573,7 +1077,7 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         double arrivalDistance = this.getTargetPullArrivalDistance();
-        if (distance <= arrivalDistance) {
+        if (!this.isWallTopTerrainTarget() && distance <= arrivalDistance) {
             if (Config.debugLogging) {
                 Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookSlideDebug][SERVER] terrain target pull finished by config arrival hookType={} owner={} hookLife={} distance={} arrivalDistance={} ownerPos={} target={} ownerVelocity={}",
                         this.hookType,
@@ -582,7 +1086,7 @@ public class GrapplingHook extends AbstractArrow {
                         distance,
                         arrivalDistance,
                         owner.position(),
-                        this.terrainTarget,
+                        activeTarget,
                         owner.getDeltaMovement());
             }
             return true;
@@ -591,6 +1095,9 @@ public class GrapplingHook extends AbstractArrow {
         double minSpeed = this.getTargetPullMinSpeed();
         double maxSpeed = this.getTargetPullMaxSpeed();
         double speed = Math.min(maxSpeed, Math.max(minSpeed, distance * 0.35D));
+        if (this.isWallTopTerrainTarget()) {
+            speed = Math.min(speed, distance);
+        }
         Vec3 newVelocity = delta.normalize().scale(speed);
         this.lastTerrainPullVelocity = newVelocity;
         if (Config.debugLogging) {
@@ -605,7 +1112,7 @@ public class GrapplingHook extends AbstractArrow {
                     minSpeed,
                     maxSpeed,
                     owner.position(),
-                    this.terrainTarget,
+                    activeTarget,
                     owner.getDeltaMovement(),
                     newVelocity);
         }
@@ -614,6 +1121,60 @@ public class GrapplingHook extends AbstractArrow {
         owner.fallDistance = 0.0F;
         owner.hurtMarked = true;
         return false;
+    }
+
+    private Vec3 getActiveTerrainPullTarget(Entity owner) {
+        if (!this.isWallTopTerrainTarget() || this.wallTopApproachComplete) {
+            return this.terrainTarget;
+        }
+
+        Vec3 approachDelta = this.wallTopApproachTarget.subtract(owner.position());
+        if (horizontalDistance(approachDelta) <= WALL_TOP_APPROACH_HORIZONTAL_DISTANCE
+                && owner.getY() >= this.wallTopSupportSurfaceY + WALL_TOP_CROSSING_CLEARANCE) {
+            this.wallTopApproachComplete = true;
+            this.previousTerrainTargetDistance = Double.MAX_VALUE;
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] wall top approach completed owner={} hookLife={} ownerPos={} approachTarget={} landingTarget={} supportBlock={} supportSurfaceY={}",
+                        owner.getId(),
+                        this.life,
+                        owner.position(),
+                        this.wallTopApproachTarget,
+                        this.terrainTarget,
+                        this.wallTopSupportBlock,
+                        this.wallTopSupportSurfaceY);
+            }
+            return this.terrainTarget;
+        }
+
+        return this.wallTopApproachTarget;
+    }
+
+    private boolean hasReachedWallTopTerrainTarget(Entity owner, Vec3 delta) {
+        if (horizontalDistance(delta) > WALL_TOP_ARRIVAL_HORIZONTAL_DISTANCE
+                || Math.abs(delta.y) > WALL_TOP_ARRIVAL_VERTICAL_DISTANCE
+                || owner.getY() < this.wallTopSupportSurfaceY - WALL_TOP_ARRIVAL_VERTICAL_DISTANCE) {
+            return false;
+        }
+
+        VoxelShape supportShape = this.level().getBlockState(this.wallTopSupportBlock)
+                .getCollisionShape(this.level(), this.wallTopSupportBlock);
+        if (supportShape.isEmpty()) {
+            return false;
+        }
+
+        double supportSurfaceY = this.wallTopSupportBlock.getY() + supportShape.max(Direction.Axis.Y);
+        return Math.abs(supportSurfaceY - this.wallTopSupportSurfaceY) <= WALL_TOP_SURFACE_EPSILON;
+    }
+
+    private boolean isWallTopTerrainTarget() {
+        return this.wallTopApproachTarget != null && this.wallTopSupportBlock != null;
+    }
+
+    private void clearWallTopTarget() {
+        this.wallTopApproachTarget = null;
+        this.wallTopSupportBlock = null;
+        this.wallTopSupportSurfaceY = 0.0D;
+        this.wallTopApproachComplete = false;
     }
 
     private void startPullFovEffect(Entity owner) {
@@ -649,7 +1210,25 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     private void discardHook() {
+        if (this.useFinished) {
+            this.discard();
+            return;
+        }
+
+        this.useFinished = true;
         this.stopPullFovEffect();
+        if (!this.level().isClientSide && this.getOwner() instanceof ServerPlayer serverPlayer && this.useSequenceId >= 0) {
+            if (!this.swingTransitionAnimationStopped && this.getVariant().isPhantom()) {
+                this.stopSwingTransitionAnimation(serverPlayer);
+                this.swingTransitionAnimationStopped = true;
+            }
+            this.stopSwingAnimation(serverPlayer);
+            GrapplingHookUse.finishUse(
+                    serverPlayer,
+                    this.useSequenceId,
+                    this.getId(),
+                    this.getUseMode() == UseMode.PHANTOM_SWING);
+        }
         this.discard();
     }
 
@@ -690,7 +1269,7 @@ public class GrapplingHook extends AbstractArrow {
             return;
         }
 
-        if (this.shouldSnapToTarget() && this.terrainTarget != null) {
+        if (!this.isWallTopTerrainTarget() && this.shouldSnapToTarget() && this.terrainTarget != null) {
             owner.teleportTo(this.terrainTarget.x, this.terrainTarget.y, this.terrainTarget.z);
         }
 
@@ -773,6 +1352,8 @@ public class GrapplingHook extends AbstractArrow {
     protected void onHitBlock(@NotNull BlockHitResult result) {
         this.hooked = true;
         this.hookType = HookType.GROUND;
+        this.swingAnchor = result.getLocation();
+        this.swingAnchorBlock = result.getBlockPos();
         this.terrainTarget = this.findSafeTerrainTarget(result);
         if (Config.debugLogging) {
             Entity owner = this.getOwner();
@@ -801,6 +1382,7 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     private Vec3 findSafeTerrainTarget(BlockHitResult result) {
+        this.clearWallTopTarget();
         Entity owner = this.getOwner();
         if (owner == null) {
             if (Config.debugLogging) {
@@ -810,9 +1392,12 @@ public class GrapplingHook extends AbstractArrow {
             return result.getLocation();
         }
 
-        Vec3 retarget = this.getFacingWallRetarget(result, owner);
+        WallTopTarget retarget = this.getFacingWallRetarget(result, owner);
         if (retarget != null) {
-            return retarget;
+            this.wallTopApproachTarget = retarget.approachTarget();
+            this.wallTopSupportBlock = retarget.supportBlock();
+            this.wallTopSupportSurfaceY = retarget.supportSurfaceY();
+            return retarget.landingTarget();
         }
 
         Vec3 target = this.getRawTerrainTarget(result, owner);
@@ -855,7 +1440,7 @@ public class GrapplingHook extends AbstractArrow {
         return null;
     }
 
-    private Vec3 getFacingWallRetarget(BlockHitResult result, Entity owner) {
+    private WallTopTarget getFacingWallRetarget(BlockHitResult result, Entity owner) {
         Direction hitDirection = result.getDirection();
         if (!Config.wallHookFacingRetargetEnabled) {
             if (Config.debugLogging) {
@@ -911,13 +1496,13 @@ public class GrapplingHook extends AbstractArrow {
 
         Vec3 base = result.getLocation().add(normal.scale(Config.wallHookFacingRetargetForwardOffset));
         String retargetSource = "adaptive";
-        Vec3 retarget = Config.wallHookFacingRetargetAdaptiveEnabled
+        WallTopTarget retarget = Config.wallHookFacingRetargetAdaptiveEnabled
                 ? this.findAdaptiveFacingWallRetarget(owner, base, result, facingDot)
                 : null;
         if (retarget == null) {
             retargetSource = Config.wallHookFacingRetargetAdaptiveEnabled ? "fallback_after_adaptive" : "fallback_adaptive_disabled";
             Vec3 fallback = base.add(0.0D, Config.wallHookFacingRetargetUpOffset, 0.0D);
-            retarget = this.findCollisionFreeTarget(owner, fallback);
+            retarget = this.createWallTopTarget(owner, result, fallback.y);
             if (retarget == null) {
                 if (Config.debugLogging) {
                     Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] wall retarget fallback failed owner={} direction={} facingDot={} fallback={} base={} source={} reason=no_collision_free_candidate ownerPos={}",
@@ -934,7 +1519,7 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         if (Config.debugLogging) {
-            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] applied wall retarget owner={} direction={} facingDot={} requiredDot={} allowedAngleWidthDegrees={} halfAngleDegrees={} hit={} base={} retarget={} source={} upOffset={} forwardOffset={} ownerPos={} ownerVelocity={}",
+            Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] applied wall retarget owner={} direction={} facingDot={} requiredDot={} allowedAngleWidthDegrees={} halfAngleDegrees={} hit={} base={} approachTarget={} landingTarget={} supportBlock={} supportSurfaceY={} source={} upOffset={} forwardOffset={} ownerPos={} ownerVelocity={}",
                     owner.getId(),
                     hitDirection,
                     facingDot,
@@ -943,7 +1528,10 @@ public class GrapplingHook extends AbstractArrow {
                     Config.wallHookFacingRetargetHalfAngleDegrees,
                     result.getLocation(),
                     base,
-                    retarget,
+                    retarget.approachTarget(),
+                    retarget.landingTarget(),
+                    retarget.supportBlock(),
+                    retarget.supportSurfaceY(),
                     retargetSource,
                     Config.wallHookFacingRetargetUpOffset,
                     Config.wallHookFacingRetargetForwardOffset,
@@ -953,16 +1541,17 @@ public class GrapplingHook extends AbstractArrow {
         return retarget;
     }
 
-    private Vec3 findAdaptiveFacingWallRetarget(Entity owner, Vec3 base, BlockHitResult result, double facingDot) {
+    private WallTopTarget findAdaptiveFacingWallRetarget(Entity owner, Vec3 base, BlockHitResult result, double facingDot) {
         double minOffset = Math.min(Config.wallHookFacingRetargetMinUpOffset, Config.wallHookFacingRetargetUpOffset);
         double maxOffset = Math.max(Config.wallHookFacingRetargetMinUpOffset, Config.wallHookFacingRetargetUpOffset);
         double step = Math.max(0.05D, Config.wallHookFacingRetargetSearchStep);
 
         for (double upOffset = minOffset; upOffset <= maxOffset + 1.0E-6D; upOffset += step) {
             Vec3 target = base.add(0.0D, upOffset, 0.0D);
-            if (!this.hasWallTopClearance(result, target)) {
+            WallTopTarget candidate = this.createWallTopTarget(owner, result, target.y);
+            if (candidate == null) {
                 if (Config.debugLogging) {
-                    Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive candidate rejected owner={} reason=no_wall_top_clearance direction={} facingDot={} hit={} target={} upOffset={}",
+                    Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive candidate rejected owner={} reason=no_stable_wall_top_target direction={} facingDot={} hit={} target={} upOffset={}",
                             owner.getId(),
                             result.getDirection(),
                             facingDot,
@@ -973,33 +1562,23 @@ public class GrapplingHook extends AbstractArrow {
                 continue;
             }
 
-            Vec3 candidate = this.findCollisionFreeTarget(owner, target);
-            if (candidate != null) {
-                if (Config.debugLogging) {
-                    Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive wall retarget found owner={} direction={} facingDot={} hit={} candidate={} upOffset={} minOffset={} maxOffset={} step={} ownerPos={}",
-                            owner.getId(),
-                            result.getDirection(),
-                            facingDot,
-                            result.getLocation(),
-                            candidate,
-                            upOffset,
-                            minOffset,
-                            maxOffset,
-                            step,
-                            owner.position());
-                }
-                return candidate;
-            }
             if (Config.debugLogging) {
-                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive candidate rejected owner={} reason=no_collision_free_candidate direction={} facingDot={} hit={} target={} upOffset={} ownerPos={}",
+                Epicawaken_grappling_hook.LOGGER.info("[GrapplingHookWallRetargetDebug][SERVER] adaptive wall retarget found owner={} direction={} facingDot={} hit={} approachTarget={} landingTarget={} supportBlock={} supportSurfaceY={} upOffset={} minOffset={} maxOffset={} step={} ownerPos={}",
                         owner.getId(),
                         result.getDirection(),
                         facingDot,
                         result.getLocation(),
-                        target,
+                        candidate.approachTarget(),
+                        candidate.landingTarget(),
+                        candidate.supportBlock(),
+                        candidate.supportSurfaceY(),
                         upOffset,
+                        minOffset,
+                        maxOffset,
+                        step,
                         owner.position());
             }
+            return candidate;
         }
 
         if (Config.debugLogging) {
@@ -1016,20 +1595,68 @@ public class GrapplingHook extends AbstractArrow {
         return null;
     }
 
-    private boolean hasWallTopClearance(BlockHitResult result, Vec3 target) {
+    private WallTopTarget createWallTopTarget(Entity owner, BlockHitResult result, double candidateY) {
         BlockPos hitBlock = result.getBlockPos();
-        int targetBlockY = Mth.floor(target.y);
-        int yOffset = targetBlockY - hitBlock.getY();
-        if (yOffset < 0) {
-            return false;
+        int feetBlockY = Mth.floor(candidateY);
+        if (feetBlockY < hitBlock.getY()) {
+            return null;
         }
 
-        BlockPos wallColumnAtFeet = hitBlock.above(yOffset);
-        BlockPos supportBelow = wallColumnAtFeet.below();
+        BlockPos supportBlock = new BlockPos(hitBlock.getX(), feetBlockY - 1, hitBlock.getZ());
         Level level = this.level();
-        boolean feetSpaceClear = level.getBlockState(wallColumnAtFeet).getCollisionShape(level, wallColumnAtFeet).isEmpty();
-        boolean supportExists = !level.getBlockState(supportBelow).getCollisionShape(level, supportBelow).isEmpty();
-        return feetSpaceClear && supportExists;
+        VoxelShape supportShape = level.getBlockState(supportBlock).getCollisionShape(level, supportBlock);
+        if (supportShape.isEmpty()) {
+            return null;
+        }
+
+        double minX = supportBlock.getX() + supportShape.min(Direction.Axis.X);
+        double maxX = supportBlock.getX() + supportShape.max(Direction.Axis.X);
+        double minZ = supportBlock.getZ() + supportShape.min(Direction.Axis.Z);
+        double maxZ = supportBlock.getZ() + supportShape.max(Direction.Axis.Z);
+        double supportSurfaceY = supportBlock.getY() + supportShape.max(Direction.Axis.Y);
+        double halfWidth = owner.getBbWidth() * 0.5D + WALL_TOP_EDGE_GAP;
+        if (maxX - minX < halfWidth * 2.0D || maxZ - minZ < halfWidth * 2.0D) {
+            return null;
+        }
+
+        Vec3 hit = result.getLocation();
+        double landingX = Mth.clamp(hit.x, minX + halfWidth, maxX - halfWidth);
+        double landingZ = Mth.clamp(hit.z, minZ + halfWidth, maxZ - halfWidth);
+        Direction direction = result.getDirection();
+        switch (direction) {
+            case EAST -> landingX = maxX - halfWidth;
+            case WEST -> landingX = minX + halfWidth;
+            case SOUTH -> landingZ = maxZ - halfWidth;
+            case NORTH -> landingZ = minZ + halfWidth;
+            default -> {
+                return null;
+            }
+        }
+
+        double landingY = supportSurfaceY + WALL_TOP_SURFACE_EPSILON;
+        Vec3 landingTarget = new Vec3(landingX, landingY, landingZ);
+        double outsideDistance = Math.max(
+                Config.wallHookFacingRetargetForwardOffset,
+                owner.getBbWidth() * 0.5D + WALL_TOP_EDGE_GAP);
+        double approachY = supportSurfaceY + WALL_TOP_APPROACH_CLEARANCE;
+        Vec3 approachTarget = switch (direction) {
+            case EAST -> new Vec3(maxX + outsideDistance, approachY, landingZ);
+            case WEST -> new Vec3(minX - outsideDistance, approachY, landingZ);
+            case SOUTH -> new Vec3(landingX, approachY, maxZ + outsideDistance);
+            case NORTH -> new Vec3(landingX, approachY, minZ - outsideDistance);
+            default -> landingTarget;
+        };
+
+        if (!this.isCollisionFreeAt(owner, approachTarget) || !this.isCollisionFreeAt(owner, landingTarget)) {
+            return null;
+        }
+
+        return new WallTopTarget(approachTarget, landingTarget, supportBlock.immutable(), supportSurfaceY);
+    }
+
+    private boolean isCollisionFreeAt(Entity owner, Vec3 target) {
+        Vec3 offset = target.subtract(owner.position());
+        return this.level().noCollision(owner, owner.getBoundingBox().move(offset));
     }
 
     private Vec3 getRawTerrainTarget(BlockHitResult result, Entity owner) {
@@ -1085,11 +1712,81 @@ public class GrapplingHook extends AbstractArrow {
         this.entityData.set(DATA_VARIANT, variant.ordinal());
     }
 
+    public void configureUse(int sequenceId, boolean phantomPending) {
+        this.useSequenceId = sequenceId;
+        this.setUseMode(phantomPending ? UseMode.PHANTOM_PENDING : UseMode.NORMAL);
+    }
+
+    public void captureSwingForwardDirectionFromVelocity() {
+        Vec3 velocity = this.getDeltaMovement();
+        Vec3 horizontal = new Vec3(velocity.x, 0.0D, velocity.z);
+        if (horizontal.lengthSqr() >= 1.0E-8D) {
+            this.swingForwardDirection = horizontal.normalize();
+        }
+    }
+
+    public int getUseSequenceId() {
+        return this.useSequenceId;
+    }
+
+    public UseMode getUseMode() {
+        return UseMode.fromId(this.entityData.get(DATA_USE_MODE));
+    }
+
+    private void setUseMode(UseMode useMode) {
+        this.entityData.set(DATA_USE_MODE, useMode.ordinal());
+    }
+
+    public boolean isSwinging() {
+        return this.entityData.get(DATA_SWINGING);
+    }
+
+    public static GrapplingHook findActiveSwingHook(Entity owner) {
+        if (owner == null || owner.level() == null) {
+            return null;
+        }
+
+        return owner.level().getEntitiesOfClass(
+                        GrapplingHook.class,
+                        owner.getBoundingBox().inflate(32.0D),
+                        hook -> hook.isSwinging() && hook.getOwner() == owner)
+                .stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    public float getSwingAnimationSpeedMultiplier(float animationTotalTimeSeconds, int reservedPhaseTicks) {
+        int phaseDurationTicks = Math.max(
+                SWING_PHASE_MIN_DURATION_TICKS,
+                this.entityData.get(DATA_SWING_PHASE_DURATION_TICKS));
+        int animationPlaybackTicks = Math.max(1, phaseDurationTicks - Math.max(0, reservedPhaseTicks));
+        float animationDurationTicks = Math.max(1.0F, animationTotalTimeSeconds * 20.0F);
+        return Mth.clamp(animationDurationTicks / animationPlaybackTicks, 0.25F, 3.0F);
+    }
+
+    private record WallTopTarget(
+            Vec3 approachTarget,
+            Vec3 landingTarget,
+            BlockPos supportBlock,
+            double supportSurfaceY) {
+    }
+
     public enum HookType {
         AIR,
         GROUND,
         ENTITY,
         MISSED
+    }
+
+    public enum UseMode {
+        NORMAL,
+        PHANTOM_PENDING,
+        PHANTOM_SWING;
+
+        private static UseMode fromId(int id) {
+            UseMode[] values = values();
+            return id >= 0 && id < values.length ? values[id] : NORMAL;
+        }
     }
 
 }

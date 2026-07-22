@@ -24,7 +24,7 @@ public final class ClientNetworkPacketHandlers {
 
         Entity entity = Minecraft.getInstance().level.getEntity(entityId);
         GrapplingHookMissedTracker.clearMissed(entity);
-        GrapplingHookParcoolBlocker.block(entity, Config.maxLifeTicks + Config.getHookLockDelayTicks() + 20);
+        GrapplingHookParcoolBlocker.block(entity, Config.getHookUseBlockDurationTicks());
     }
 
     public static void handleArrival(int entityId) {
