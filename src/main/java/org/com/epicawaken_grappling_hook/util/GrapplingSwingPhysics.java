@@ -16,12 +16,17 @@ public final class GrapplingSwingPhysics {
     private GrapplingSwingPhysics() {
     }
 
-    public static double calculateInitialRopeLength(Entity entity, Vec3 anchor) {
+    public static double calculateInitialRopeLength(Entity entity, Vec3 anchor, double maximumRopeLength) {
         double distance = attachmentPosition(entity).distanceTo(anchor);
-        return Math.max(Config.phantomSwingMinRopeLength, Math.min(Config.phantomHookLaunchRange, distance));
+        return Math.max(Config.PHANTOM_SWING_MIN_ROPE_LENGTH, Math.min(maximumRopeLength, distance));
     }
 
-    public static void applyInitialBoost(Entity entity, Vec3 anchor, Vec3 swingPlaneNormal, int travelDirection) {
+    public static void applyInitialBoost(
+            Entity entity,
+            Vec3 anchor,
+            double speedRopeLength,
+            Vec3 swingPlaneNormal,
+            int travelDirection) {
         if (Config.phantomSwingInitialBoost <= 0.0D) {
             return;
         }
@@ -37,12 +42,19 @@ public final class GrapplingSwingPhysics {
             return;
         }
 
-        Vec3 boostedVelocity = entity.getDeltaMovement().add(tangent.scale(Config.phantomSwingInitialBoost * travelDirection));
-        entity.setDeltaMovement(clampSpeed(boostedVelocity));
+        double speedScale = calculateSpeedScale(speedRopeLength);
+        Vec3 boostedVelocity = entity.getDeltaMovement().add(
+                tangent.scale(Config.phantomSwingInitialBoost * speedScale * travelDirection));
+        entity.setDeltaMovement(clampSpeed(boostedVelocity, speedScale));
         entity.hurtMarked = true;
     }
 
-    public static double calculateInitialEnergy(Entity entity, Vec3 anchor, double ropeLength, Vec3 swingPlaneNormal) {
+    public static double calculateInitialEnergy(
+            Entity entity,
+            Vec3 anchor,
+            double ropeLength,
+            double speedRopeLength,
+            Vec3 swingPlaneNormal) {
         Vec3 anchorToPlayer = attachmentPosition(entity).subtract(anchor);
         double distance = anchorToPlayer.length();
         if (distance < MIN_VECTOR_LENGTH_SQR) {
@@ -52,7 +64,13 @@ public final class GrapplingSwingPhysics {
         Vec3 normal = anchorToPlayer.scale(1.0D / distance);
         Vec3 tangent = forwardTangent(swingPlaneNormal, normal, entity.getDeltaMovement());
         double forwardSpeed = entity.getDeltaMovement().dot(tangent);
-        return Math.min(energyCap(ropeLength), mechanicalEnergy(attachmentPosition(entity), anchor, ropeLength, forwardSpeed));
+        double speedScale = calculateSpeedScale(speedRopeLength);
+        return Math.min(energyCap(), mechanicalEnergy(
+                attachmentPosition(entity),
+                anchor,
+                ropeLength,
+                forwardSpeed,
+                speedScale));
     }
 
     public static int calculateInitialTravelDirection(Entity entity, Vec3 anchor, Vec3 swingPlaneNormal) {
@@ -74,6 +92,7 @@ public final class GrapplingSwingPhysics {
             Entity entity,
             Vec3 anchor,
             double ropeLength,
+            double speedRopeLength,
             Vec3 swingPlaneNormal,
             double storedEnergy,
             int previousTravelDirection) {
@@ -85,6 +104,7 @@ public final class GrapplingSwingPhysics {
 
         Vec3 normal = anchorToPlayer.scale(1.0D / distance);
         Vec3 velocity = entity.getDeltaMovement();
+        double speedScale = calculateSpeedScale(speedRopeLength);
         double ropeError = Math.max(0.0D, distance - ropeLength);
         double radialSpeed = velocity.dot(normal);
         if (ropeError > 0.0D) {
@@ -99,10 +119,10 @@ public final class GrapplingSwingPhysics {
 
         Vec3 forwardTangent = forwardTangent(swingPlaneNormal, normal, velocity);
         if (forwardTangent.lengthSqr() < MIN_VECTOR_LENGTH_SQR) {
-            return new SwingResult(clampSpeed(velocity), storedEnergy, previousTravelDirection);
+            return new SwingResult(clampSpeed(velocity, speedScale), storedEnergy, previousTravelDirection);
         }
 
-        velocity = velocity.add(forwardTangent.scale(-SWING_GRAVITY * forwardTangent.y));
+        velocity = velocity.add(forwardTangent.scale(-SWING_GRAVITY * speedScale * forwardTangent.y));
         Vec3 attachment = attachmentPosition(entity);
         double forwardSpeed = velocity.dot(forwardTangent);
         double angleCosine = Math.max(-1.0D, Math.min(1.0D, -normal.y));
@@ -113,30 +133,38 @@ public final class GrapplingSwingPhysics {
             velocity = velocity.subtract(forwardTangent.scale(forwardSpeed));
             forwardSpeed = 0.0D;
         }
-        double currentEnergy = mechanicalEnergy(attachment, anchor, ropeLength, forwardSpeed);
+        double currentEnergy = mechanicalEnergy(
+                attachment,
+                anchor,
+                ropeLength,
+                forwardSpeed,
+                speedScale);
         double energy = Math.max(storedEnergy, currentEnergy);
         energy *= Config.phantomSwingEnergyRetention;
-        energy = Math.min(energy, energyCap(ropeLength));
+        energy = Math.min(energy, energyCap());
         int travelDirection = previousTravelDirection;
-        if (forwardSpeed > TURNAROUND_SPEED) {
+        double turnaroundSpeed = TURNAROUND_SPEED * speedScale;
+        if (forwardSpeed > turnaroundSpeed) {
             travelDirection = 1;
-        } else if (forwardSpeed < -TURNAROUND_SPEED) {
+        } else if (forwardSpeed < -turnaroundSpeed) {
             travelDirection = -1;
         }
         boolean reversed = travelDirection != previousTravelDirection;
         double travelSign = travelDirection;
         double descentFactor = Math.max(0.0D, -forwardTangent.y * travelSign);
         energy += descentFactor * Config.phantomSwingEnergyGainPerTick;
-        energy = Math.min(energy, energyCap(ropeLength));
+        energy = Math.min(energy, energyCap());
         if (reversed) {
             energy *= Config.phantomSwingPerSwingEnergyMultiplier;
         }
 
-        double heightAboveBottom = Math.max(0.0D, attachment.y - (anchor.y - ropeLength));
-        double targetKineticEnergy = Math.max(0.0D, energy - SWING_GRAVITY * heightAboveBottom);
+        double normalizedHeightAboveBottom = normalizedHeightAboveBottom(attachment, anchor, ropeLength);
+        double targetKineticEnergy = Math.max(
+                0.0D,
+                energy - SWING_GRAVITY * normalizedHeightAboveBottom);
         double targetSpeed = Math.min(
-                Config.phantomSwingMaxSpeed,
-                Math.sqrt(2.0D * targetKineticEnergy));
+                Config.phantomSwingMaxSpeed * speedScale,
+                Math.sqrt(2.0D * targetKineticEnergy) * speedScale);
         if (stopAtMaximumAngle) {
             targetSpeed = 0.0D;
         }
@@ -148,20 +176,39 @@ public final class GrapplingSwingPhysics {
             velocity = velocity.add(forwardTangent.scale(cappedForwardSpeed - forwardSpeed));
         }
 
-        velocity = clampSpeed(velocity);
+        velocity = clampSpeed(velocity, speedScale);
         entity.setDeltaMovement(velocity);
         entity.fallDistance = 0.0F;
         entity.hurtMarked = true;
         return new SwingResult(velocity, energy, travelDirection);
     }
 
-    private static double mechanicalEnergy(Vec3 attachment, Vec3 anchor, double ropeLength, double forwardSpeed) {
-        double heightAboveBottom = Math.max(0.0D, attachment.y - (anchor.y - ropeLength));
-        return 0.5D * forwardSpeed * forwardSpeed + SWING_GRAVITY * heightAboveBottom;
+    private static double mechanicalEnergy(
+            Vec3 attachment,
+            Vec3 anchor,
+            double ropeLength,
+            double forwardSpeed,
+            double speedScale) {
+        double normalizedForwardSpeed = forwardSpeed / speedScale;
+        return 0.5D * normalizedForwardSpeed * normalizedForwardSpeed
+                + SWING_GRAVITY * normalizedHeightAboveBottom(attachment, anchor, ropeLength);
     }
 
-    private static double energyCap(double ropeLength) {
-        return SWING_GRAVITY * ropeLength * 2.0D * Config.phantomSwingEnergyCapRatio;
+    private static double normalizedHeightAboveBottom(Vec3 attachment, Vec3 anchor, double ropeLength) {
+        double heightAboveBottom = Math.max(0.0D, attachment.y - (anchor.y - ropeLength));
+        return heightAboveBottom * Config.PHANTOM_SWING_TARGET_ROPE_LENGTH / Math.max(ropeLength, MIN_VECTOR_LENGTH_SQR);
+    }
+
+    private static double energyCap() {
+        return SWING_GRAVITY
+                * Config.PHANTOM_SWING_TARGET_ROPE_LENGTH
+                * 2.0D
+                * Config.phantomSwingEnergyCapRatio;
+    }
+
+    private static double calculateSpeedScale(double ropeLength) {
+        double clampedRopeLength = Math.max(Config.PHANTOM_SWING_MIN_ROPE_LENGTH, ropeLength);
+        return clampedRopeLength / Config.PHANTOM_SWING_TARGET_ROPE_LENGTH;
     }
 
     public static Vec3 attachmentPosition(Entity entity) {
@@ -215,8 +262,8 @@ public final class GrapplingSwingPhysics {
         return horizontal.lengthSqr() < MIN_VECTOR_LENGTH_SQR ? Vec3.ZERO : horizontal.normalize();
     }
 
-    private static Vec3 clampSpeed(Vec3 velocity) {
-        double maxSpeed = Config.phantomSwingMaxSpeed;
+    private static Vec3 clampSpeed(Vec3 velocity, double speedScale) {
+        double maxSpeed = Config.phantomSwingMaxSpeed * speedScale;
         double speedSqr = velocity.lengthSqr();
         if (speedSqr <= maxSpeed * maxSpeed) {
             return velocity;

@@ -1,0 +1,20 @@
+{
+  "type": "epicawaken_grappling_hook:phantom_grappling_hook_craft",
+  "category": "equipment",
+  "pattern": [
+    "MMM",
+    "MHM",
+    "MMM"
+  ],
+  "key": {
+    "M": {
+      "item": "minecraft:phantom_membrane"
+    },
+    "H": {
+      "item": "epicawaken_grappling_hook:grappling_hook"
+    }
+  },
+  "result": {
+    "item": "epicawaken_grappling_hook:phantom_grappling_hook"
+  }
+}

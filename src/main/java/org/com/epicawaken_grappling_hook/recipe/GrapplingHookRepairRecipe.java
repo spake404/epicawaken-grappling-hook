@@ -21,7 +21,7 @@ public class GrapplingHookRepairRecipe extends CustomRecipe {
     public boolean matches(CraftingContainer container, @NotNull Level level) {
         RepairInputs inputs = findInputs(container);
         return inputs.grapplingHookCount == 1
-                && inputs.ropeCount >= inputs.grapplingHook.getDamageValue()
+                && inputs.ropeCount > 0
                 && inputs.invalidCount == 0
                 && inputs.grapplingHook.isDamaged();
     }
@@ -33,13 +33,13 @@ public class GrapplingHookRepairRecipe extends CustomRecipe {
         if (inputs.grapplingHookCount != 1
                 || inputs.invalidCount > 0
                 || !inputs.grapplingHook.isDamaged()
-                || inputs.ropeCount < inputs.grapplingHook.getDamageValue()) {
+                || inputs.ropeCount <= 0) {
             return ItemStack.EMPTY;
         }
 
         ItemStack result = inputs.grapplingHook.copy();
         result.setCount(1);
-        result.setDamageValue(0);
+        result.setDamageValue(Math.max(0, inputs.grapplingHook.getDamageValue() - inputs.ropeCount));
         return result;
     }
 
@@ -51,11 +51,11 @@ public class GrapplingHookRepairRecipe extends CustomRecipe {
         if (inputs.grapplingHookCount != 1
                 || inputs.invalidCount > 0
                 || !inputs.grapplingHook.isDamaged()
-                || inputs.ropeCount < inputs.grapplingHook.getDamageValue()) {
+                || inputs.ropeCount <= 0) {
             return remainingItems;
         }
 
-        int ropesToConsume = inputs.grapplingHook.getDamageValue();
+        int ropesToConsume = Math.min(inputs.ropeCount, inputs.grapplingHook.getDamageValue());
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack stack = container.getItem(i);
             if (!stack.is(ModItems.ROPE.get())) {

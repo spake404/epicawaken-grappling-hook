@@ -17,14 +17,14 @@ public class GrapplingHookRepairEvents {
             return;
         }
 
-        int repairAmount = left.getDamageValue();
-        if (repairAmount <= 0 || right.getCount() < repairAmount) {
+        int repairAmount = Math.min(left.getDamageValue(), right.getCount());
+        if (repairAmount <= 0) {
             return;
         }
 
         ItemStack result = left.copy();
         result.setCount(1);
-        result.setDamageValue(0);
+        result.setDamageValue(left.getDamageValue() - repairAmount);
         event.setOutput(result);
         event.setMaterialCost(repairAmount);
         event.setCost(1);

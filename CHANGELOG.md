@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.1.0 - 2026-07-26
+
+### 中文
+
+- 修复部分无限耐久模组修改物品耐久属性后，普通钩锁和幻翼钩锁会被误判为已损坏并禁止发射的问题。
+- 重写墙面安全落点处理，检查真实支撑碰撞面、完整玩家碰撞箱和可站立空间，减少卡墙、拉拽中断以及到达后钩锁未清理的问题。
+- 增强幻翼钩锁短按钩空的水平与向上冲量，并分别限制水平、垂直和合成速度。
+- 固定幻翼钩锁基础投射距离为 15 格、摆荡目标绳长为 10 格、最短绳长为 5 格，并移除对应的旧配置选项。
+- 加入按绳长归一化的摆荡速度、能量和速度上限计算，使不同绳长下的往返时间更稳定，并减少短绳动量不足和越荡越低的问题。
+- 新增普通钩锁和幻翼钩锁配方；普通钩锁初始为 0/64 耐久，每根绳索恢复 1 点耐久并支持分批修理；幻翼钩锁继承用于升级的普通钩锁全部 NBT 与剩余耐久。
+- 新增“绳索延展”附魔，I/II/III 级分别增加 3/5/7 格绳长；普通钩锁增加投射距离，幻翼钩锁同时增加投射距离与最终摆荡绳长。
+- 新增“绳索回收”附魔，I/II/III 级分别有 20%/40%/60% 概率在使用钩锁时不消耗耐久，并提供对应的附魔书、附魔台和铁砧支持。
+- 将“绳索回收”附魔书加入 19 个原本包含随机附魔物品的原版宝箱战利品表，每次以 10% 概率生成 I、II 或 III 级附魔书。
+- 为两种钩锁补充完整的物品悬浮说明，并正式注册 Curios `glove` 槽位；不再接受 `charm` 或通用 Curio 槽位，副手使用保持不变。
+- 创造模式使用普通钩锁或幻翼钩锁不再消耗耐久。
+- 完善幻翼钩锁物品栏渲染，使钩锁主体和幻翼同时显示；更新绳索图标与相关模型资源，并将模组创造模式标签移动到第二页。
+- 清理 Forge 配置中的失效摆荡参数和误导性选项，统一自动生命周期计算并补齐中英文配置文本。
+
+### English
+
+- Fixed compatibility with infinite-durability mods that caused normal and Phantom Grappling Hooks to be treated as broken and prevented them from firing.
+- Reworked safe wall-top targeting to validate real support collision surfaces, the player's full collision box, and standing space, reducing wall clipping, interrupted pulls, and hooks remaining after arrival.
+- Increased horizontal and upward momentum for Phantom Grappling Hook short presses into empty air, with separate horizontal, vertical, and combined speed limits.
+- Fixed the Phantom Grappling Hook base launch range at 15 blocks, target swing rope length at 10 blocks, and minimum rope length at 5 blocks, removing the obsolete configuration entries.
+- Added rope-length-normalized swing speed, energy, and speed-cap calculations so swing travel time remains more consistent across rope lengths and short ropes retain enough momentum.
+- Added recipes for both hooks. Normal hooks start at 0/64 durability and support partial repairs at one durability per rope; Phantom Grappling Hooks inherit all NBT and remaining durability from the upgraded normal hook.
+- Added the Rope Extension enchantment. Levels I/II/III add 3/5/7 blocks of rope length; normal hooks gain launch range, while Phantom Grappling Hooks gain both launch range and final swing rope length.
+- Added the Rope Recovery enchantment. Levels I/II/III provide a 20%/40%/60% chance to avoid durability consumption when using a hook, with enchanted-book, enchanting-table, and anvil support.
+- Added Rope Recovery enchanted books to 19 vanilla chest loot tables that already contain randomized enchanted loot, with a 10% chance to generate a level I, II, or III book.
+- Added complete item tooltips for both hooks and formally registered the Curios `glove` slot. The hooks no longer accept `charm` or generic Curio slots, while offhand use remains available.
+- Prevented normal and Phantom Grappling Hooks from consuming durability in Creative mode.
+- Improved Phantom Grappling Hook inventory rendering so both the hook body and phantom are visible, updated rope icon and model resources, and moved the mod creative tab to the second page.
+- Cleaned obsolete and misleading Forge configuration entries, centralized automatic lifetime calculations, and completed Chinese and English configuration text.
+
+
 ## 2.0.0 - 2026-07-20
 
 ### 模组简介
@@ -44,28 +79,7 @@ The following summarizes the major changes from 1.5.0 through 2.0.0:
 - Production environments hide and disable client pause, slow motion, model transform editing, Enter-key hook previews, and verbose debug logging; the tools remain available and are registered only in Forge development environments.
 - Updated the Combat Evolution and EpicFight Awaken dependency versions as part of the 2.0.0 compatibility pass.
 
-### 2.0.0 补充更新（2026-07-22）
-
-- 修复部分无限耐久模组修改物品耐久属性后，钩锁会被误判为已损坏并禁止发射的问题；普通钩锁和幻翼钩锁现在都能兼容无限耐久物品。
-- 重写墙面上方安全落点处理，改为检查真实支撑碰撞面、完整玩家碰撞箱和可站立空间，并通过墙外抬升点再进入墙顶落点，减少卡墙、拉拽中断和到达后钩锁不消失的问题。
-- 为幻翼钩锁短按钩空加入独立冲量系统，提高水平推进和向上冲量，并分别限制水平、垂直及合成速度。
-- 完善幻翼钩锁物品栏渲染，使物品栏模型同时显示钩锁主体和幻翼；更新绳子物品图标与模型资源。
-- 将钩锁独立创造模式标签移动到第二页，避免挤占原版第一页并将“刷怪蛋”标签推到下一页。
-- 清理和校正 Forge 配置：移除不再生效的旧摆荡参数与误导性的生命周期选项，统一自动生命周期计算，修正配置说明，并补齐中文配置名称。
-- 将普通钩锁和幻翼钩锁的 Curios 装备位置从 `charm` 迁移到独立的 `glove` 槽位；两种钩锁不再接受护符栏或通用 Curio 槽位，副手使用仍然保留。
-- 版本号保持为 `2.0.0`。
-
-### 2.0.0 Additional Updates (2026-07-22)
-
-- Fixed compatibility with infinite-durability mods that caused grappling hooks to be treated as broken and prevented them from firing.
-- Reworked safe wall-top targeting to validate real support collision surfaces, the player's full collision box, and standing space, using a two-stage outward lift and wall-top destination to reduce wall clipping, interrupted pulls, and hooks remaining after arrival.
-- Added a dedicated empty-air short-press impulse system for the Phantom Grappling Hook with stronger horizontal and upward momentum plus separate horizontal, vertical, and total speed limits.
-- Improved Phantom Grappling Hook inventory rendering so both the hook body and phantom are visible, and updated the rope item icon and model resources.
-- Moved the grappling hook creative tab to the second page so it no longer displaces vanilla tabs or pushes Spawn Eggs off the first page.
-- Audited and cleaned the Forge configuration, removing obsolete swing parameters and the misleading lifetime option, centralizing automatic lifetime calculations, correcting descriptions, and completing Chinese configuration names.
-- Moved both grappling hooks from the Curios `charm` slot to a dedicated `glove` slot. Charm and generic Curio slots are no longer accepted, while offhand use remains supported.
-- The version remains `2.0.0`.
-
+## 1.7.0
 ## 1.7.0 - 2026-07-03
 
 ### 中文

@@ -27,6 +27,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
+import org.com.epicawaken_grappling_hook.enchantment.RopeExtensionEnchantment;
 import org.com.epicawaken_grappling_hook.network.GrapplingHookFovType;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
 import org.com.epicawaken_grappling_hook.network.StartGrapplingHookFovPacket;
@@ -53,6 +54,7 @@ public class GrapplingHook extends AbstractArrow {
     private static final EntityDataAccessor<Boolean> DATA_SWINGING = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Integer> DATA_SWING_DIRECTION = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_SWING_PHASE_DURATION_TICKS = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_ROPE_EXTENSION_LEVEL = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
     public static final float PULL_TARGET = 0.22F;
     private static final double AIR_HOOK_MIN_ANGLE_DEGREES = 3.0D;
     private static final double AIR_HOOK_MIN_HEIGHT_ABOVE_EYES = 1.0D;
@@ -124,12 +126,14 @@ public class GrapplingHook extends AbstractArrow {
         this.entityData.define(DATA_SWINGING, false);
         this.entityData.define(DATA_SWING_DIRECTION, 1);
         this.entityData.define(DATA_SWING_PHASE_DURATION_TICKS, SWING_PHASE_FALLBACK_DURATION_TICKS);
+        this.entityData.define(DATA_ROPE_EXTENSION_LEVEL, 0);
     }
 
     @Override
     public void addAdditionalSaveData(@NotNull CompoundTag tag) {
         super.addAdditionalSaveData(tag);
         tag.putString("HookVariant", this.getVariant().name());
+        tag.putInt("RopeExtensionLevel", this.getRopeExtensionLevel());
     }
 
     @Override
@@ -142,6 +146,7 @@ public class GrapplingHook extends AbstractArrow {
                 this.setVariant(GrapplingHookVariant.NORMAL);
             }
         }
+        this.setRopeExtensionLevel(tag.getInt("RopeExtensionLevel"));
     }
 
     @Override
@@ -229,7 +234,6 @@ public class GrapplingHook extends AbstractArrow {
                 this.lockHookType();
             }
         }
-
         if (!this.hooked) {
             return;
         }
@@ -429,8 +433,11 @@ public class GrapplingHook extends AbstractArrow {
         this.setDeltaMovement(Vec3.ZERO);
         this.setPos(this.swingAnchor.x, this.swingAnchor.y, this.swingAnchor.z);
         this.inGround = true;
-        this.swingRopeLength = GrapplingSwingPhysics.calculateInitialRopeLength(owner, this.swingAnchor);
-        this.swingTargetRopeLength = Math.min(this.swingRopeLength, Config.phantomSwingTargetRopeLength);
+        this.swingRopeLength = GrapplingSwingPhysics.calculateInitialRopeLength(
+                owner,
+                this.swingAnchor,
+                this.getPhantomLaunchRange());
+        this.swingTargetRopeLength = Math.min(this.swingRopeLength, this.getPhantomSwingTargetRopeLength());
         if (this.swingForwardDirection == null || this.swingForwardDirection.lengthSqr() < 1.0E-8D) {
             this.swingForwardDirection = horizontalLookDirection(owner);
         }
@@ -454,12 +461,14 @@ public class GrapplingHook extends AbstractArrow {
         GrapplingSwingPhysics.applyInitialBoost(
                 owner,
                 this.swingAnchor,
+                this.swingTargetRopeLength,
                 this.swingPlaneNormal,
                 this.swingTravelDirection);
         this.swingEnergy = GrapplingSwingPhysics.calculateInitialEnergy(
                 owner,
                 this.swingAnchor,
                 this.swingRopeLength,
+                this.swingTargetRopeLength,
                 this.swingPlaneNormal);
 
         if (Config.debugLogging) {
@@ -470,7 +479,7 @@ public class GrapplingHook extends AbstractArrow {
                     this.swingAnchor,
                     this.swingRopeLength,
                     this.swingTargetRopeLength,
-                    Config.phantomSwingTargetRopeLength,
+                    this.getPhantomSwingTargetRopeLength(),
                     owner.position(),
                     owner.getDeltaMovement());
         }
@@ -519,6 +528,7 @@ public class GrapplingHook extends AbstractArrow {
                 owner,
                 this.swingAnchor,
                 this.swingRopeLength,
+                this.swingTargetRopeLength,
                 this.swingPlaneNormal,
                 this.swingEnergy,
                 this.swingTravelDirection);
@@ -1712,9 +1722,30 @@ public class GrapplingHook extends AbstractArrow {
         this.entityData.set(DATA_VARIANT, variant.ordinal());
     }
 
-    public void configureUse(int sequenceId, boolean phantomPending) {
+    public void configureUse(int sequenceId, boolean phantomPending, int ropeExtensionLevel) {
         this.useSequenceId = sequenceId;
+        this.setRopeExtensionLevel(ropeExtensionLevel);
         this.setUseMode(phantomPending ? UseMode.PHANTOM_PENDING : UseMode.NORMAL);
+    }
+
+    public int getRopeExtensionLevel() {
+        return this.entityData.get(DATA_ROPE_EXTENSION_LEVEL);
+    }
+
+    public void setRopeExtensionLevel(int level) {
+        this.entityData.set(DATA_ROPE_EXTENSION_LEVEL, Mth.clamp(level, 0, 3));
+    }
+
+    public int getRopeExtensionBonusBlocks() {
+        return RopeExtensionEnchantment.getBonusBlocks(this.getRopeExtensionLevel());
+    }
+
+    private double getPhantomLaunchRange() {
+        return Config.PHANTOM_HOOK_LAUNCH_RANGE + this.getRopeExtensionBonusBlocks();
+    }
+
+    private double getPhantomSwingTargetRopeLength() {
+        return Config.PHANTOM_SWING_TARGET_ROPE_LENGTH + this.getRopeExtensionBonusBlocks();
     }
 
     public void captureSwingForwardDirectionFromVelocity() {

@@ -15,6 +15,9 @@ public class ModRecipeSerializers {
             RECIPE_SERIALIZERS.register("grappling_hook_repair", () ->
                     new SimpleCraftingRecipeSerializer<>(GrapplingHookRepairRecipe::new));
 
+    public static final RegistryObject<RecipeSerializer<PhantomGrapplingHookCraftRecipe>> PHANTOM_GRAPPLING_HOOK_CRAFT =
+            RECIPE_SERIALIZERS.register("phantom_grappling_hook_craft", PhantomGrapplingHookCraftRecipe.Serializer::new);
+
     private ModRecipeSerializers() {
     }
 }

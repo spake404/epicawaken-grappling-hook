@@ -3,6 +3,8 @@ package org.com.epicawaken_grappling_hook;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.EnchantedBookItem;
+import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -13,6 +15,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
+import org.com.epicawaken_grappling_hook.enchantment.ModEnchantments;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
@@ -36,6 +39,14 @@ public class Epicawaken_grappling_hook {
                         output.accept(ModItems.GRAPPLING_HOOK.get());
                         output.accept(ModItems.PHANTOM_GRAPPLING_HOOK.get());
                         output.accept(ModItems.ROPE.get());
+                        for (int level = 1; level <= ModEnchantments.ROPE_EXTENSION.get().getMaxLevel(); level++) {
+                            output.accept(EnchantedBookItem.createForEnchantment(
+                                    new EnchantmentInstance(ModEnchantments.ROPE_EXTENSION.get(), level)));
+                        }
+                        for (int level = 1; level <= ModEnchantments.ROPE_RECOVERY.get().getMaxLevel(); level++) {
+                            output.accept(EnchantedBookItem.createForEnchantment(
+                                    new EnchantmentInstance(ModEnchantments.ROPE_RECOVERY.get(), level)));
+                        }
                     })
                     .build());
 
@@ -44,6 +55,7 @@ public class Epicawaken_grappling_hook {
 
         ModEntities.ENTITY_TYPES.register(modEventBus);
         ModItems.ITEMS.register(modEventBus);
+        ModEnchantments.ENCHANTMENTS.register(modEventBus);
         ModRecipeSerializers.RECIPE_SERIALIZERS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         modEventBus.addListener(ModHookAnimations::registerAnimations);

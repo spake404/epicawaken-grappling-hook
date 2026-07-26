@@ -11,6 +11,9 @@ public class Config {
     private static final int BASE_HOOK_LOCK_DELAY_TICKS = 11;
     private static final int MIN_MISSED_HOOK_VISUAL_TICKS = 18;
     private static final double BASE_PROJECTILE_SPEED = 2.0D;
+    public static final double PHANTOM_SWING_MIN_ROPE_LENGTH = 5.0D;
+    public static final double PHANTOM_HOOK_LAUNCH_RANGE = 15.0D;
+    public static final double PHANTOM_SWING_TARGET_ROPE_LENGTH = 10.0D;
 
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
@@ -55,15 +58,12 @@ public class Config {
     private static final ForgeConfigSpec.BooleanValue RESPECT_KNOCKBACK_RESISTANCE;
 
     private static final ForgeConfigSpec.IntValue PHANTOM_SWING_HOLD_THRESHOLD_TICKS;
-    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_MIN_ROPE_LENGTH;
-    private static final ForgeConfigSpec.DoubleValue PHANTOM_HOOK_LAUNCH_RANGE;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_HORIZONTAL_PULL_STRENGTH;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_MAX_HORIZONTAL_SPEED;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_BASE_UP_SPEED;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_HEIGHT_UP_SCALE;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_MAX_UP_SPEED;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_MISSED_AIR_MAX_TOTAL_SPEED;
-    private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_TARGET_ROPE_LENGTH;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_REEL_IN_SPEED;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_INITIAL_BOOST;
     private static final ForgeConfigSpec.DoubleValue PHANTOM_SWING_CONSTRAINT_STRENGTH;
@@ -242,14 +242,6 @@ public class Config {
                 .comment("How many ticks the grappling hook key must remain held before a Phantom Grappling Hook switches from normal use to swinging.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingHoldThresholdTicks")
                 .defineInRange("phantomSwingHoldThresholdTicks", 7, 2, 20);
-        PHANTOM_SWING_MIN_ROPE_LENGTH = BUILDER
-                .comment("Minimum rope length when a Phantom Grappling Hook starts swinging.")
-                .translation("config.epicawaken_grappling_hook.phantomSwingMinRopeLength")
-                .defineInRange("phantomSwingMinRopeLength", 2.0D, 0.5D, 16.0D);
-        PHANTOM_HOOK_LAUNCH_RANGE = BUILDER
-                .comment("Maximum launch range for a Phantom Grappling Hook.")
-                .translation("config.epicawaken_grappling_hook.phantomHookLaunchRange")
-                .defineInRange("phantomHookLaunchRange", 12.0D, 2.0D, 64.0D);
         PHANTOM_MISSED_AIR_HORIZONTAL_PULL_STRENGTH = BUILDER
                 .comment("Horizontal pull strength used when a short-pressed Phantom Grappling Hook anchors in empty air.")
                 .translation("config.epicawaken_grappling_hook.phantomMissedAirHorizontalPullStrength")
@@ -274,10 +266,6 @@ public class Config {
                 .comment("Maximum combined speed after a Phantom Grappling Hook short-press air pull.")
                 .translation("config.epicawaken_grappling_hook.phantomMissedAirMaxTotalSpeed")
                 .defineInRange("phantomMissedAirMaxTotalSpeed", 2.8D, 0.1D, 10.0D);
-        PHANTOM_SWING_TARGET_ROPE_LENGTH = BUILDER
-                .comment("Target rope length after a Phantom Grappling Hook enters swing mode.")
-                .translation("config.epicawaken_grappling_hook.phantomSwingMaxRopeLength")
-                .defineInRange("phantomSwingMaxRopeLength", 7.0D, 2.0D, 64.0D);
         PHANTOM_SWING_REEL_IN_SPEED = BUILDER
                 .comment("Rope length removed per tick while a Phantom Grappling Hook reels in after entering swing mode.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingReelInSpeed")
@@ -285,7 +273,7 @@ public class Config {
         PHANTOM_SWING_INITIAL_BOOST = BUILDER
                 .comment("Initial tangential speed added when a Phantom Grappling Hook begins swinging.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingInitialBoost")
-                .defineInRange("phantomSwingInitialBoost", 1.15D, 0.0D, 3.0D);
+                .defineInRange("phantomSwingInitialBoost", 1.82D, 0.0D, 3.0D);
         PHANTOM_SWING_CONSTRAINT_STRENGTH = BUILDER
                 .comment("Strength used to pull a swinging player back inside the rope radius.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingConstraintStrength")
@@ -297,7 +285,7 @@ public class Config {
         PHANTOM_SWING_MAX_SPEED = BUILDER
                 .comment("Maximum total player speed while swinging from a Phantom Grappling Hook.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingMaxSpeed")
-                .defineInRange("phantomSwingMaxSpeed", 3.2D, 0.2D, 5.0D);
+                .defineInRange("phantomSwingMaxSpeed", 4.68D, 0.2D, 5.0D);
         PHANTOM_SWING_PREHOLD_FALL_MULTIPLIER = BUILDER
                 .comment("Multiplier applied to downward velocity while holding a Phantom Grappling Hook before swing mode starts.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingPreholdFallMultiplier")
@@ -313,11 +301,11 @@ public class Config {
         PHANTOM_SWING_ENERGY_GAIN_PER_TICK = BUILDER
                 .comment("Maximum swing energy gained per tick while descending, scaled by how steeply the player is moving downward.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingEnergyGainPerTick")
-                .defineInRange("phantomSwingEnergyGainPerTick", 0.03D, 0.0D, 0.25D);
+                .defineInRange("phantomSwingEnergyGainPerTick", 0.052D, 0.0D, 0.25D);
         PHANTOM_SWING_ENERGY_CAP_RATIO = BUILDER
                 .comment("Maximum fraction of the energy needed to loop over the top of the swing anchor.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingEnergyCapRatio")
-                .defineInRange("phantomSwingEnergyCapRatio", 0.55D, 0.1D, 1.0D);
+                .defineInRange("phantomSwingEnergyCapRatio", 0.65D, 0.1D, 1.0D);
         PHANTOM_SWING_MAX_ANGLE_DEGREES = BUILDER
                 .comment("Maximum swing angle measured from directly below the anchor. Values below 90 keep the player below the anchor height.")
                 .translation("config.epicawaken_grappling_hook.phantomSwingMaxAngleDegrees")
@@ -382,15 +370,12 @@ public class Config {
     public static boolean respectKnockbackResistance;
 
     public static int phantomSwingHoldThresholdTicks;
-    public static double phantomSwingMinRopeLength;
-    public static double phantomHookLaunchRange;
     public static double phantomMissedAirHorizontalPullStrength;
     public static double phantomMissedAirMaxHorizontalSpeed;
     public static double phantomMissedAirBaseUpSpeed;
     public static double phantomMissedAirHeightUpScale;
     public static double phantomMissedAirMaxUpSpeed;
     public static double phantomMissedAirMaxTotalSpeed;
-    public static double phantomSwingTargetRopeLength;
     public static double phantomSwingReelInSpeed;
     public static double phantomSwingInitialBoost;
     public static double phantomSwingConstraintStrength;
@@ -449,15 +434,12 @@ public class Config {
         respectKnockbackResistance = RESPECT_KNOCKBACK_RESISTANCE.get();
 
         phantomSwingHoldThresholdTicks = PHANTOM_SWING_HOLD_THRESHOLD_TICKS.get();
-        phantomSwingMinRopeLength = PHANTOM_SWING_MIN_ROPE_LENGTH.get();
-        phantomHookLaunchRange = PHANTOM_HOOK_LAUNCH_RANGE.get();
         phantomMissedAirHorizontalPullStrength = PHANTOM_MISSED_AIR_HORIZONTAL_PULL_STRENGTH.get();
         phantomMissedAirMaxHorizontalSpeed = PHANTOM_MISSED_AIR_MAX_HORIZONTAL_SPEED.get();
         phantomMissedAirBaseUpSpeed = PHANTOM_MISSED_AIR_BASE_UP_SPEED.get();
         phantomMissedAirHeightUpScale = PHANTOM_MISSED_AIR_HEIGHT_UP_SCALE.get();
         phantomMissedAirMaxUpSpeed = PHANTOM_MISSED_AIR_MAX_UP_SPEED.get();
         phantomMissedAirMaxTotalSpeed = PHANTOM_MISSED_AIR_MAX_TOTAL_SPEED.get();
-        phantomSwingTargetRopeLength = Math.max(phantomSwingMinRopeLength, Math.min(phantomHookLaunchRange, PHANTOM_SWING_TARGET_ROPE_LENGTH.get()));
         phantomSwingReelInSpeed = PHANTOM_SWING_REEL_IN_SPEED.get();
         phantomSwingInitialBoost = PHANTOM_SWING_INITIAL_BOOST.get();
         phantomSwingConstraintStrength = PHANTOM_SWING_CONSTRAINT_STRENGTH.get();
@@ -477,7 +459,12 @@ public class Config {
     }
 
     public static double getProjectileSpeed() {
-        return BASE_PROJECTILE_SPEED * hookPullAnimationSpeed;
+        return getProjectileSpeed(0.0D);
+    }
+
+    public static double getProjectileSpeed(double extraRange) {
+        return BASE_PROJECTILE_SPEED * hookPullAnimationSpeed
+                + Math.max(0.0D, extraRange) / getHookLockDelayTicks();
     }
 
     public static int getMissedHookVisualTicks() {
@@ -498,6 +485,10 @@ public class Config {
     }
 
     public static double getPhantomProjectileSpeed() {
-        return phantomHookLaunchRange / getHookLockDelayTicks();
+        return getPhantomProjectileSpeed(0.0D);
+    }
+
+    public static double getPhantomProjectileSpeed(double extraRange) {
+        return (PHANTOM_HOOK_LAUNCH_RANGE + Math.max(0.0D, extraRange)) / getHookLockDelayTicks();
     }
 }

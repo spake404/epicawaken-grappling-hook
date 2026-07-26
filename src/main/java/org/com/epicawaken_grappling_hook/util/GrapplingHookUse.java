@@ -21,6 +21,8 @@ import net.minecraftforge.network.PacketDistributor;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
+import org.com.epicawaken_grappling_hook.enchantment.RopeExtensionEnchantment;
+import org.com.epicawaken_grappling_hook.enchantment.RopeRecoveryEnchantment;
 import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookUseTracker;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
 import org.com.epicawaken_grappling_hook.item.ModItems;
@@ -61,6 +63,7 @@ public class GrapplingHookUse {
             return;
         }
         GrapplingHookVariant variant = GrapplingHookVariant.fromStack(grapplingHook);
+        int ropeExtensionLevel = RopeExtensionEnchantment.getLevel(grapplingHook);
         if (hasActiveUseSession(player)) {
             return;
         }
@@ -81,6 +84,7 @@ public class GrapplingHookUse {
                 sequenceId,
                 player.serverLevel().getGameTime(),
                 variant,
+                ropeExtensionLevel,
                 validatedAimYaw,
                 validatedAimPitch,
                 !player.onGround()));
@@ -121,7 +125,7 @@ public class GrapplingHookUse {
         GrapplingHook hook = new GrapplingHook(ModEntities.GRAPPLING_HOOK.get(), level);
         hook.setOwner(player);
         hook.setVariant(variant);
-        hook.configureUse(sequenceId, variant.isPhantom());
+        configureSpawnedHook(player, hook);
         hook.setPos(player.getX(), player.getEyeY() - 0.1D, player.getZ());
         shootConfiguredHook(player, hook);
         hook.captureSwingForwardDirectionFromVelocity();
@@ -134,7 +138,10 @@ public class GrapplingHookUse {
         GrapplingHookVariant variant = session == null ? hook.getVariant() : session.variant;
         float aimYaw = session == null ? player.getYRot() : session.aimYaw;
         float aimPitch = session == null ? player.getXRot() : session.aimPitch;
-        double projectileSpeed = variant.isPhantom() ? Config.getPhantomProjectileSpeed() : Config.getProjectileSpeed();
+        double extraRange = hook.getRopeExtensionBonusBlocks();
+        double projectileSpeed = variant.isPhantom()
+                ? Config.getPhantomProjectileSpeed(extraRange)
+                : Config.getProjectileSpeed(extraRange);
         if (variant.isPhantom()) {
             Vec3 aimDirection = Vec3.directionFromRotation(aimPitch, aimYaw);
             hook.shoot(
@@ -168,12 +175,12 @@ public class GrapplingHookUse {
     public static void configureSpawnedHook(ServerPlayer player, GrapplingHook hook) {
         UseSession session = USE_SESSIONS.get(player.getUUID());
         if (session == null) {
-            hook.configureUse(-1, false);
+            hook.configureUse(-1, false, 0);
             return;
         }
 
         hook.setVariant(session.variant);
-        hook.configureUse(session.sequenceId, session.variant.isPhantom());
+        hook.configureUse(session.sequenceId, session.variant.isPhantom(), session.ropeExtensionLevel);
     }
 
     public static void registerSpawnedHook(ServerPlayer player, GrapplingHook hook) {
@@ -302,7 +309,12 @@ public class GrapplingHookUse {
     }
 
     private static void damageGrapplingHook(ServerPlayer player, ItemStack stack) {
-        if (!stack.isDamageableItem()) {
+        if (player.getAbilities().instabuild || !stack.isDamageableItem()) {
+            return;
+        }
+
+        int ropeRecoveryLevel = RopeRecoveryEnchantment.getLevel(stack);
+        if (player.getRandom().nextFloat() < RopeRecoveryEnchantment.getChance(ropeRecoveryLevel)) {
             return;
         }
 
@@ -363,6 +375,7 @@ public class GrapplingHookUse {
         private final int sequenceId;
         private final long pressGameTime;
         private final GrapplingHookVariant variant;
+        private final int ropeExtensionLevel;
         private final float aimYaw;
         private final float aimPitch;
         private final boolean swingAllowedAtPress;
@@ -374,6 +387,7 @@ public class GrapplingHookUse {
                 int sequenceId,
                 long pressGameTime,
                 GrapplingHookVariant variant,
+                int ropeExtensionLevel,
                 float aimYaw,
                 float aimPitch,
                 boolean swingAllowedAtPress) {
@@ -381,6 +395,7 @@ public class GrapplingHookUse {
             this.pressGameTime = pressGameTime;
             this.releaseGameTime = pressGameTime;
             this.variant = variant;
+            this.ropeExtensionLevel = ropeExtensionLevel;
             this.aimYaw = aimYaw;
             this.aimPitch = aimPitch;
             this.swingAllowedAtPress = swingAllowedAtPress;
