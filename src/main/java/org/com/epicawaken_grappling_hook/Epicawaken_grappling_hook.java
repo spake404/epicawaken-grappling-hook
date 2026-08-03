@@ -47,6 +47,10 @@ public class Epicawaken_grappling_hook {
                             output.accept(EnchantedBookItem.createForEnchantment(
                                     new EnchantmentInstance(ModEnchantments.ROPE_RECOVERY.get(), level)));
                         }
+                        output.accept(EnchantedBookItem.createForEnchantment(
+                                new EnchantmentInstance(ModEnchantments.ITEM_RETRIEVAL.get(), 1)));
+                        output.accept(EnchantedBookItem.createForEnchantment(
+                                new EnchantmentInstance(ModEnchantments.GRAPPLING_SHIELD_DISARM.get(), 1)));
                     })
                     .build());
 

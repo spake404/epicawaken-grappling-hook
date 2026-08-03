@@ -39,13 +39,20 @@ public class UseGrapplingHookPacket {
         NetworkEvent.Context context = contextSupplier.get();
         ServerPlayer sender = context.getSender();
         if (sender != null) {
-            GrapplingHookUse.handleInput(sender, packet.action, packet.sequenceId, packet.aimYaw, packet.aimPitch);
+            context.enqueueWork(() -> GrapplingHookUse.handleInput(
+                    sender,
+                    packet.action,
+                    packet.sequenceId,
+                    packet.aimYaw,
+                    packet.aimPitch));
         }
         context.setPacketHandled(true);
     }
 
     public enum Action {
         PRESS,
-        RELEASE
+        RELEASE,
+        ITEM_RETRIEVAL,
+        ENTITY_PULL_TARGET
     }
 }

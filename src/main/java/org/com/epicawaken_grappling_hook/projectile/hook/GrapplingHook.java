@@ -1,5 +1,12 @@
 package org.com.epicawaken_grappling_hook.projectile.hook;
 
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import net.minecraft.util.Mth;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -8,12 +15,16 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
@@ -30,14 +41,17 @@ import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
 import org.com.epicawaken_grappling_hook.enchantment.RopeExtensionEnchantment;
 import org.com.epicawaken_grappling_hook.network.GrapplingHookFovType;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
+import org.com.epicawaken_grappling_hook.network.OpenEntityHookChoicePacket;
 import org.com.epicawaken_grappling_hook.network.StartGrapplingHookFovPacket;
 import org.com.epicawaken_grappling_hook.network.StopGrapplingHookFovPacket;
 import org.com.epicawaken_grappling_hook.network.SyncGrapplingHookArrivalPacket;
 import org.com.epicawaken_grappling_hook.network.SyncGrapplingHookMissedPacket;
+import org.com.epicawaken_grappling_hook.network.SyncGrapplingPullVelocityPacket;
 import org.com.epicawaken_grappling_hook.util.AirHookArrivalJumpTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookArrivalTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookMissedTracker;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookParcoolBlocker;
+import org.com.epicawaken_grappling_hook.util.GrapplingShieldDisarmHandler;
 import org.com.epicawaken_grappling_hook.util.GrapplingHookUse;
 import org.com.epicawaken_grappling_hook.util.GrapplingSwingPhysics;
 import org.com.epicawaken_grappling_hook.util.GroundHookSlideTracker;
@@ -55,6 +69,8 @@ public class GrapplingHook extends AbstractArrow {
     private static final EntityDataAccessor<Integer> DATA_SWING_DIRECTION = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_SWING_PHASE_DURATION_TICKS = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_ROPE_EXTENSION_LEVEL = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> DATA_ITEM_RETRIEVAL_RETURNING = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_ENTITY_HOOK_CHOICE_WAITING = SynchedEntityData.defineId(GrapplingHook.class, EntityDataSerializers.BOOLEAN);
     public static final float PULL_TARGET = 0.22F;
     private static final double AIR_HOOK_MIN_ANGLE_DEGREES = 3.0D;
     private static final double AIR_HOOK_MIN_HEIGHT_ABOVE_EYES = 1.0D;
@@ -74,6 +90,19 @@ public class GrapplingHook extends AbstractArrow {
     private static final int SWING_PHASE_FALLBACK_DURATION_TICKS = 28;
     private static final int SWING_PHASE_MIN_DURATION_TICKS = 8;
     private static final int SWING_PHASE_MAX_DURATION_TICKS = 100;
+    private static final double ITEM_RETRIEVAL_SEARCH_RADIUS = 1.5D;
+    private static final double ITEM_RETRIEVAL_ATTRACTION_MIN_SPEED = 0.12D;
+    private static final double ITEM_RETRIEVAL_ATTRACTION_MAX_SPEED = 0.55D;
+    private static final double ITEM_RETRIEVAL_ATTRACTION_DISTANCE_SCALE = 0.35D;
+    private static final double ITEM_RETRIEVAL_ATTACH_DISTANCE = 0.15D;
+    private static final int ITEM_RETRIEVAL_ATTRACTION_TIMEOUT_TICKS = 10;
+    private static final double ITEM_RETRIEVAL_MIN_RETURN_SPEED = 0.1D;
+    private static final double ITEM_RETRIEVAL_ARRIVAL_DISTANCE = 1.25D;
+    private static final int ENTITY_HOOK_CHOICE_WINDOW_TICKS = 10;
+    private static final int ENTITY_TARGET_PULL_DELAY_TICKS = 2;
+    private static final int ENTITY_HOOK_RELEASE_DELAY_TICKS = 4;
+    private static final int AIR_HOOK_PULL_DELAY_TICKS = 6;
+    private static final int AIR_HOOK_RELEASE_DELAY_TICKS = 10;
     private static final double[] COLLISION_FREE_TARGET_VERTICAL_OFFSETS = {0.0D, 0.25D, 0.5D, 1.0D, -0.25D};
 
     private int life;
@@ -113,6 +142,20 @@ public class GrapplingHook extends AbstractArrow {
     private boolean swingAnimationDirectionCalibrated;
     private int swingAnimationForwardDirection;
     private AnimationManager.AnimationAccessor<? extends StaticAnimation> activeSwingAnimation;
+    private final Map<UUID, Boolean> retrievedItemGravityStates = new LinkedHashMap<>();
+    private final Set<UUID> attachedRetrievedItemIds = new HashSet<>();
+    private boolean itemRetrievalAttracting;
+    private int itemRetrievalAttractionTicks;
+    private double retrievalReturnSpeed;
+    private boolean grapplingShieldDisarmEnabled;
+    private boolean entityHookChoiceStarted;
+    private int entityHookChoiceDeadlineLife;
+    private boolean entityPullToOwnerRequested;
+    private boolean entityHookPullExecuted;
+    private int entityHookPullExecutionLife;
+    private int entityOwnerPullStartLife = -1;
+    private int entityTargetPullStartLife = -1;
+    private float entityTargetPullStrength;
 
     public GrapplingHook(EntityType<? extends AbstractArrow> entityType, Level level) {
         super(entityType, level);
@@ -127,6 +170,8 @@ public class GrapplingHook extends AbstractArrow {
         this.entityData.define(DATA_SWING_DIRECTION, 1);
         this.entityData.define(DATA_SWING_PHASE_DURATION_TICKS, SWING_PHASE_FALLBACK_DURATION_TICKS);
         this.entityData.define(DATA_ROPE_EXTENSION_LEVEL, 0);
+        this.entityData.define(DATA_ITEM_RETRIEVAL_RETURNING, false);
+        this.entityData.define(DATA_ENTITY_HOOK_CHOICE_WAITING, false);
     }
 
     @Override
@@ -161,8 +206,20 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     @Override
+    public void remove(RemovalReason reason) {
+        if (!this.level().isClientSide) {
+            this.releaseRetrievedItems(null, false);
+        }
+        super.remove(reason);
+    }
+
+    @Override
     public void tick() {
         this.setNoGravity(true);
+        if (this.getUseMode() == UseMode.ITEM_RETRIEVAL && this.isItemRetrievalReturning()) {
+            this.inGround = false;
+            this.noPhysics = true;
+        }
         super.tick();
 
         int lockDelayTicks = Config.getHookLockDelayTicks();
@@ -178,6 +235,13 @@ public class GrapplingHook extends AbstractArrow {
             return;
         }
 
+        if (this.getUseMode() == UseMode.ITEM_RETRIEVAL) {
+            if (!this.level().isClientSide) {
+                this.tickItemRetrieval(owner, maxLifeTicks);
+            }
+            return;
+        }
+
         if (this.isSwinging()) {
             if (!this.level().isClientSide) {
                 this.tickSwing(owner);
@@ -185,7 +249,7 @@ public class GrapplingHook extends AbstractArrow {
             return;
         }
 
-        if (this.life > maxLifeTicks) {
+        if (this.life > maxLifeTicks && !this.entityHookChoiceStarted && this.hookedEntity == null) {
             this.discardHook();
             return;
         }
@@ -199,6 +263,11 @@ public class GrapplingHook extends AbstractArrow {
                 && this.life < lockDelayTicks
                 && this.getVariant().isPhantom()) {
             this.applyPhantomUseFallBrake(owner);
+        }
+
+        if (!this.level().isClientSide && this.hookedEntity != null && this.entityHookChoiceStarted) {
+            this.tickEntityHook();
+            return;
         }
 
         if (this.life < lockDelayTicks || this.getUseMode() == UseMode.PHANTOM_PENDING) {
@@ -239,7 +308,7 @@ public class GrapplingHook extends AbstractArrow {
         }
 
         switch (this.hookType) {
-            case ENTITY -> this.tickEntityHook(lockDelayTicks);
+            case ENTITY -> this.tickEntityHook();
             case AIR -> this.tickAirHook(lockDelayTicks);
             case GROUND -> this.tickGroundHook(lockDelayTicks);
             case MISSED -> this.tickMissedHook(lockDelayTicks);
@@ -270,7 +339,9 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     private boolean updateUseMode(ServerPlayer player) {
-        if (this.useSequenceId < 0 || this.getUseMode() == UseMode.NORMAL) {
+        if (this.useSequenceId < 0
+                || this.getUseMode() == UseMode.NORMAL
+                || this.getUseMode() == UseMode.ITEM_RETRIEVAL) {
             return false;
         }
 
@@ -681,10 +752,6 @@ public class GrapplingHook extends AbstractArrow {
             return;
         }
 
-        if (this.hookType == HookType.ENTITY && this.hookedEntity instanceof LivingEntity livingEntity && hasTooMuchKnockbackResistance(livingEntity)) {
-            this.hookType = HookType.AIR;
-        }
-
         if (this.hookType != HookType.ENTITY) {
             HookType previousHookType = this.hookType;
             Vec3 hookVec = this.position().subtract(owner.getEyePosition());
@@ -717,17 +784,160 @@ public class GrapplingHook extends AbstractArrow {
         return instance != null && (1.0D - instance.getValue()) * PULL_TARGET <= 0.05D;
     }
 
-    private void tickEntityHook(int lockDelayTicks) {
-        if (this.hookedEntity != null && this.life == lockDelayTicks + 2) {
-            float pullTargetStrength = this.getEntityPullStrength();
-            if (Config.respectKnockbackResistance && pullTargetStrength <= 0.05F) {
-                this.hookType = HookType.AIR;
-            }
-            this.pullHookedEntityToOwner(pullTargetStrength);
+    private void tickEntityHook() {
+        if (this.level().isClientSide) {
             return;
         }
 
-        if (this.life == lockDelayTicks + 6) {
+        if (this.hookedEntity == null || !this.hookedEntity.isAlive()) {
+            this.discardHook();
+            return;
+        }
+
+        if (!this.entityHookChoiceStarted) {
+            this.startEntityHookChoice();
+            return;
+        }
+
+        if (this.entityOwnerPullStartLife >= 0) {
+            this.tickAirHookFromStart(this.entityOwnerPullStartLife);
+            return;
+        }
+
+        if (this.entityTargetPullStartLife >= 0) {
+            this.tickTargetPullToOwner();
+            return;
+        }
+
+        if (!this.entityHookPullExecuted) {
+            if (this.entityPullToOwnerRequested) {
+                this.executeEntityHookPull(true);
+            } else if (this.life >= this.entityHookChoiceDeadlineLife) {
+                this.executeEntityHookPull(false);
+            }
+            return;
+        }
+
+        if (this.life >= this.entityHookPullExecutionLife + ENTITY_HOOK_RELEASE_DELAY_TICKS) {
+            this.discardHook();
+        }
+    }
+
+    private void startEntityHookChoice() {
+        if (this.level().isClientSide || this.entityHookChoiceStarted) {
+            return;
+        }
+
+        this.entityHookChoiceStarted = true;
+        this.entityData.set(DATA_ENTITY_HOOK_CHOICE_WAITING, true);
+        this.entityHookChoiceDeadlineLife = this.life + ENTITY_HOOK_CHOICE_WINDOW_TICKS;
+        this.setDeltaMovement(Vec3.ZERO);
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info(
+                    "[GrapplingHookEntityChoiceDebug][SERVER] choice started owner={} hook={} target={} life={} deadline={} windowTicks={}",
+                    this.getOwner() == null ? -1 : this.getOwner().getId(),
+                    this.getId(),
+                    this.hookedEntity == null ? -1 : this.hookedEntity.getId(),
+                    this.life,
+                    this.entityHookChoiceDeadlineLife,
+                    ENTITY_HOOK_CHOICE_WINDOW_TICKS);
+        }
+        if (this.getOwner() instanceof ServerPlayer serverPlayer) {
+            serverPlayer.playNotifySound(
+                    SoundEvents.EXPERIENCE_ORB_PICKUP,
+                    SoundSource.PLAYERS,
+                    1.0F,
+                    1.0F);
+            ModNetwork.CHANNEL.send(
+                    PacketDistributor.PLAYER.with(() -> serverPlayer),
+                    new OpenEntityHookChoicePacket(this.useSequenceId, ENTITY_HOOK_CHOICE_WINDOW_TICKS));
+        }
+    }
+
+    private void executeEntityHookPull(boolean pullTargetToOwner) {
+        Entity owner = this.getOwner();
+        if (owner == null || this.hookedEntity == null) {
+            this.discardHook();
+            return;
+        }
+
+        this.entityData.set(DATA_ENTITY_HOOK_CHOICE_WAITING, false);
+
+        if (pullTargetToOwner) {
+            if (this.grapplingShieldDisarmEnabled
+                    && owner instanceof ServerPlayer serverPlayer
+                    && this.hookedEntity instanceof LivingEntity livingEntity) {
+                GrapplingShieldDisarmHandler.tryDisarm(serverPlayer, livingEntity);
+            }
+
+            float pullTargetStrength = this.getEntityPullStrength();
+            if (Config.respectKnockbackResistance && pullTargetStrength <= 0.05F) {
+                this.startOwnerPullToHookedEntity();
+            } else {
+                this.startTargetPullToOwner(pullTargetStrength);
+            }
+        } else {
+            this.startOwnerPullToHookedEntity();
+        }
+    }
+
+    private void startOwnerPullToHookedEntity() {
+        if (this.entityOwnerPullStartLife >= 0) {
+            return;
+        }
+
+        this.hookType = HookType.AIR;
+        this.entityOwnerPullStartLife = this.life;
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info(
+                    "[GrapplingHookEntityChoiceDebug][SERVER] owner pull phase started owner={} hook={} target={} life={}",
+                    this.getOwner() == null ? -1 : this.getOwner().getId(),
+                    this.getId(),
+                    this.hookedEntity == null ? -1 : this.hookedEntity.getId(),
+                    this.life);
+        }
+        this.tickAirHookFromStart(this.entityOwnerPullStartLife);
+    }
+
+    private void startTargetPullToOwner(float pullTargetStrength) {
+        if (this.entityTargetPullStartLife >= 0) {
+            return;
+        }
+
+        this.entityTargetPullStartLife = this.life;
+        this.entityTargetPullStrength = pullTargetStrength;
+        if (Config.debugLogging) {
+            Epicawaken_grappling_hook.LOGGER.info(
+                    "[GrapplingHookEntityChoiceDebug][SERVER] target pull phase started owner={} hook={} target={} life={} strength={}",
+                    this.getOwner() == null ? -1 : this.getOwner().getId(),
+                    this.getId(),
+                    this.hookedEntity == null ? -1 : this.hookedEntity.getId(),
+                    this.life,
+                    pullTargetStrength);
+        }
+    }
+
+    private void tickTargetPullToOwner() {
+        if (!this.entityHookPullExecuted
+                && this.life >= this.entityTargetPullStartLife + ENTITY_TARGET_PULL_DELAY_TICKS) {
+            this.pullHookedEntityToOwner(this.entityTargetPullStrength);
+            this.syncPullVelocity(this.hookedEntity);
+            this.entityHookPullExecuted = true;
+            this.entityHookPullExecutionLife = this.life;
+            if (Config.debugLogging) {
+                Epicawaken_grappling_hook.LOGGER.info(
+                        "[GrapplingHookEntityChoiceDebug][SERVER] target pull impulse applied owner={} hook={} target={} life={} phaseStartLife={} strength={}",
+                        this.getOwner() == null ? -1 : this.getOwner().getId(),
+                        this.getId(),
+                        this.hookedEntity == null ? -1 : this.hookedEntity.getId(),
+                        this.life,
+                        this.entityTargetPullStartLife,
+                        this.entityTargetPullStrength);
+            }
+        }
+
+        if (this.entityHookPullExecuted
+                && this.life >= this.entityHookPullExecutionLife + ENTITY_HOOK_RELEASE_DELAY_TICKS) {
             this.discardHook();
         }
     }
@@ -745,25 +955,39 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     private void tickAirHook(int lockDelayTicks) {
-        if (this.life == lockDelayTicks) {
+        this.tickAirHookFromStart(lockDelayTicks);
+    }
+
+    private void tickAirHookFromStart(int animationStartLife) {
+        if (this.life == animationStartLife) {
             this.playAnimation(this.getOwner(), ModHookAnimations.HOOK_AIR);
             return;
         }
 
-        if (this.terrainTarget != null && this.tickTerrainTargetPull(lockDelayTicks + 6)) {
+        if (this.terrainTarget != null && this.tickTerrainTargetPull(animationStartLife + AIR_HOOK_PULL_DELAY_TICKS)) {
             return;
         }
 
-        if (this.life == lockDelayTicks + 6) {
+        if (this.life == animationStartLife + AIR_HOOK_PULL_DELAY_TICKS) {
             if (this.phantomMissedHookPull && this.getVariant().isPhantom()) {
                 this.applyPhantomMissedAirPull(this.getOwner());
             } else {
                 this.hookPull(this.getOwner(), (float) Config.airPullStrength);
+                this.syncPullVelocity(this.getOwner());
+            }
+            if (Config.debugLogging && this.entityOwnerPullStartLife >= 0) {
+                Epicawaken_grappling_hook.LOGGER.info(
+                        "[GrapplingHookEntityChoiceDebug][SERVER] owner pull impulse applied owner={} hook={} target={} life={} animationStartLife={}",
+                        this.getOwner() == null ? -1 : this.getOwner().getId(),
+                        this.getId(),
+                        this.hookedEntity == null ? -1 : this.hookedEntity.getId(),
+                        this.life,
+                        animationStartLife);
             }
             return;
         }
 
-        if (this.life == lockDelayTicks + 10) {
+        if (this.life == animationStartLife + AIR_HOOK_RELEASE_DELAY_TICKS) {
             this.discardHook();
         }
     }
@@ -1038,6 +1262,16 @@ public class GrapplingHook extends AbstractArrow {
         }
     }
 
+    private void syncPullVelocity(Entity entity) {
+        if (!(entity instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+
+        ModNetwork.CHANNEL.send(
+                PacketDistributor.PLAYER.with(() -> serverPlayer),
+                new SyncGrapplingPullVelocityPacket(entity.getId(), entity.getDeltaMovement()));
+    }
+
     private boolean pullOwnerToTerrainTarget(Entity owner) {
         if (owner == null || this.terrainTarget == null) {
             return true;
@@ -1220,6 +1454,10 @@ public class GrapplingHook extends AbstractArrow {
     }
 
     private void discardHook() {
+        this.entityData.set(DATA_ENTITY_HOOK_CHOICE_WAITING, false);
+        if (!this.level().isClientSide) {
+            this.releaseRetrievedItems(null, false);
+        }
         if (this.useFinished) {
             this.discard();
             return;
@@ -1240,6 +1478,222 @@ public class GrapplingHook extends AbstractArrow {
                     this.getUseMode() == UseMode.PHANTOM_SWING);
         }
         this.discard();
+    }
+
+    private void tickItemRetrieval(Entity owner, int maxLifeTicks) {
+        if (!(owner instanceof ServerPlayer player) || !player.isAlive()) {
+            this.discardHook();
+            return;
+        }
+
+        if (!this.isItemRetrievalReturning()) {
+            if (this.itemRetrievalAttracting) {
+                this.tickItemRetrievalAttraction(player);
+            } else if (this.hooked) {
+                if (this.hookedEntity != null && this.hookedEntity.isAlive()) {
+                    this.setPos(
+                            this.hookedEntity.getX(),
+                            this.hookedEntity.getY(0.8D),
+                            this.hookedEntity.getZ());
+                }
+                this.beginItemRetrieval(player);
+            } else if (this.life > maxLifeTicks) {
+                this.discardHook();
+            }
+            return;
+        }
+
+        Vec3 target = player.getEyePosition().add(0.0D, -0.35D, 0.0D);
+        Vec3 toPlayer = target.subtract(this.position());
+        double distance = toPlayer.length();
+        double returnSpeed = Math.max(ITEM_RETRIEVAL_MIN_RETURN_SPEED, this.retrievalReturnSpeed);
+        if (distance <= Math.max(ITEM_RETRIEVAL_ARRIVAL_DISTANCE, returnSpeed)) {
+            this.setPos(target.x, target.y, target.z);
+            this.releaseRetrievedItems(player, true);
+            this.discardHook();
+            return;
+        }
+
+        Vec3 returnVelocity = toPlayer.scale(returnSpeed / distance);
+        this.setDeltaMovement(returnVelocity);
+        this.moveRetrievedItemsWithHook();
+    }
+
+    private void beginItemRetrieval(ServerPlayer player) {
+        this.captureNearbyItems();
+        this.hooked = false;
+        this.hookedEntity = null;
+        this.terrainTarget = null;
+        this.swingAnchor = null;
+        this.swingAnchorBlock = null;
+        this.inGround = false;
+        this.noPhysics = true;
+        this.setDeltaMovement(Vec3.ZERO);
+        if (this.retrievedItemGravityStates.isEmpty()) {
+            this.startItemRetrievalReturn(player);
+            return;
+        }
+
+        this.itemRetrievalAttracting = true;
+        this.itemRetrievalAttractionTicks = 0;
+    }
+
+    private void tickItemRetrievalAttraction(ServerPlayer player) {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            this.discardHook();
+            return;
+        }
+
+        this.setDeltaMovement(Vec3.ZERO);
+        this.itemRetrievalAttractionTicks++;
+        Iterator<Map.Entry<UUID, Boolean>> iterator = this.retrievedItemGravityStates.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Boolean> entry = iterator.next();
+            Entity entity = serverLevel.getEntity(entry.getKey());
+            if (!(entity instanceof ItemEntity item) || !item.isAlive() || item.getItem().isEmpty()) {
+                this.attachedRetrievedItemIds.remove(entry.getKey());
+                iterator.remove();
+                continue;
+            }
+
+            item.setNoGravity(true);
+            item.setPickUpDelay(20);
+            item.setDeltaMovement(Vec3.ZERO);
+            if (this.attachedRetrievedItemIds.contains(entry.getKey())) {
+                item.setPos(this.getX(), this.getY(), this.getZ());
+                item.hurtMarked = true;
+                continue;
+            }
+
+            Vec3 toHook = this.position().subtract(item.position());
+            double distance = toHook.length();
+            if (distance <= ITEM_RETRIEVAL_ATTACH_DISTANCE) {
+                this.attachedRetrievedItemIds.add(entry.getKey());
+                item.setPos(this.getX(), this.getY(), this.getZ());
+                item.hurtMarked = true;
+                continue;
+            }
+
+            double attractionSpeed = Mth.clamp(
+                    distance * ITEM_RETRIEVAL_ATTRACTION_DISTANCE_SCALE,
+                    ITEM_RETRIEVAL_ATTRACTION_MIN_SPEED,
+                    ITEM_RETRIEVAL_ATTRACTION_MAX_SPEED);
+            Vec3 attractionVelocity = toHook.scale(Math.min(distance, attractionSpeed) / distance);
+            item.setDeltaMovement(attractionVelocity);
+            item.hurtMarked = true;
+        }
+
+        if (this.retrievedItemGravityStates.isEmpty()
+                || this.attachedRetrievedItemIds.size() >= this.retrievedItemGravityStates.size()) {
+            this.startItemRetrievalReturn(player);
+            return;
+        }
+
+        if (this.itemRetrievalAttractionTicks >= ITEM_RETRIEVAL_ATTRACTION_TIMEOUT_TICKS) {
+            this.releaseUnattachedRetrievedItems(serverLevel);
+            this.startItemRetrievalReturn(player);
+        }
+    }
+
+    private void startItemRetrievalReturn(ServerPlayer player) {
+        this.itemRetrievalAttracting = false;
+        this.itemRetrievalAttractionTicks = 0;
+        this.entityData.set(DATA_ITEM_RETRIEVAL_RETURNING, true);
+
+        Vec3 target = player.getEyePosition().add(0.0D, -0.35D, 0.0D);
+        Vec3 toPlayer = target.subtract(this.position());
+        double distance = toPlayer.length();
+        if (distance > 1.0E-6D) {
+            double returnSpeed = Math.max(ITEM_RETRIEVAL_MIN_RETURN_SPEED, this.retrievalReturnSpeed);
+            this.setDeltaMovement(toPlayer.scale(returnSpeed / distance));
+        } else {
+            this.setDeltaMovement(Vec3.ZERO);
+        }
+        this.moveRetrievedItemsWithHook();
+    }
+
+    private void releaseUnattachedRetrievedItems(ServerLevel serverLevel) {
+        Iterator<Map.Entry<UUID, Boolean>> iterator = this.retrievedItemGravityStates.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Boolean> entry = iterator.next();
+            if (this.attachedRetrievedItemIds.contains(entry.getKey())) {
+                continue;
+            }
+
+            Entity entity = serverLevel.getEntity(entry.getKey());
+            if (entity instanceof ItemEntity item && item.isAlive() && !item.getItem().isEmpty()) {
+                item.setNoGravity(entry.getValue());
+                item.setDeltaMovement(Vec3.ZERO);
+                item.setNoPickUpDelay();
+                item.hurtMarked = true;
+            }
+            iterator.remove();
+        }
+    }
+
+    private void captureNearbyItems() {
+        AABB searchBox = new AABB(this.position(), this.position()).inflate(ITEM_RETRIEVAL_SEARCH_RADIUS);
+        List<ItemEntity> nearbyItems = this.level().getEntitiesOfClass(
+                ItemEntity.class,
+                searchBox,
+                item -> item.isAlive() && !item.getItem().isEmpty());
+        for (ItemEntity item : nearbyItems) {
+            this.retrievedItemGravityStates.put(item.getUUID(), item.isNoGravity());
+            item.setNoGravity(true);
+            item.setPickUpDelay(20);
+            item.setDeltaMovement(Vec3.ZERO);
+        }
+    }
+
+    private void moveRetrievedItemsWithHook() {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        Iterator<Map.Entry<UUID, Boolean>> iterator = this.retrievedItemGravityStates.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Boolean> entry = iterator.next();
+            Entity entity = serverLevel.getEntity(entry.getKey());
+            if (!(entity instanceof ItemEntity item) || !item.isAlive() || item.getItem().isEmpty()) {
+                iterator.remove();
+                continue;
+            }
+
+            item.setNoGravity(true);
+            item.setPickUpDelay(20);
+            item.setDeltaMovement(Vec3.ZERO);
+            item.setPos(this.getX(), this.getY(), this.getZ());
+            item.hurtMarked = true;
+        }
+    }
+
+    private void releaseRetrievedItems(ServerPlayer player, boolean attemptPickup) {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        Vec3 releasePosition = player != null
+                ? player.position().add(0.0D, 0.25D, 0.0D)
+                : this.position();
+        for (Map.Entry<UUID, Boolean> entry : this.retrievedItemGravityStates.entrySet()) {
+            Entity entity = serverLevel.getEntity(entry.getKey());
+            if (!(entity instanceof ItemEntity item) || !item.isAlive() || item.getItem().isEmpty()) {
+                continue;
+            }
+
+            item.setNoGravity(entry.getValue());
+            item.setDeltaMovement(Vec3.ZERO);
+            item.setPos(releasePosition.x, releasePosition.y, releasePosition.z);
+            item.setNoPickUpDelay();
+            item.hurtMarked = true;
+            if (attemptPickup && player != null) {
+                item.playerTouch(player);
+            }
+        }
+        this.retrievedItemGravityStates.clear();
+        this.attachedRetrievedItemIds.clear();
+        this.itemRetrievalAttracting = false;
+        this.itemRetrievalAttractionTicks = 0;
     }
 
     private boolean hasReachedTerrainTarget(Vec3 delta, double distance) {
@@ -1355,6 +1809,9 @@ public class GrapplingHook extends AbstractArrow {
             this.hookedEntity = result.getEntity();
             this.moveTo(this.hookedEntity.position());
             this.setDeltaMovement(Vec3.ZERO);
+            if (!this.level().isClientSide && this.getUseMode() != UseMode.ITEM_RETRIEVAL) {
+                this.startEntityHookChoice();
+            }
         }
     }
 
@@ -1728,6 +2185,48 @@ public class GrapplingHook extends AbstractArrow {
         this.setUseMode(phantomPending ? UseMode.PHANTOM_PENDING : UseMode.NORMAL);
     }
 
+    public boolean enableItemRetrieval() {
+        if (this.useFinished
+                || this.isRemoved()
+                || this.isSwinging()
+                || this.getUseMode() == UseMode.PHANTOM_SWING) {
+            return false;
+        }
+        this.setUseMode(UseMode.ITEM_RETRIEVAL);
+        return true;
+    }
+
+    public boolean requestEntityPullToOwner() {
+        if (this.useFinished
+                || this.isRemoved()
+                || this.getUseMode() == UseMode.ITEM_RETRIEVAL
+                || this.isSwinging()
+                || this.hookType != HookType.ENTITY
+                || !this.entityHookChoiceStarted
+                || this.entityHookPullExecuted
+                || this.entityOwnerPullStartLife >= 0
+                || this.entityTargetPullStartLife >= 0
+                || this.life > this.entityHookChoiceDeadlineLife) {
+            return false;
+        }
+        this.entityPullToOwnerRequested = true;
+        return true;
+    }
+
+    public void setGrapplingShieldDisarmEnabled(boolean enabled) {
+        this.grapplingShieldDisarmEnabled = enabled;
+    }
+
+    public void setRetrievalReturnSpeed(double speed) {
+        if (Double.isFinite(speed) && speed > 0.0D) {
+            this.retrievalReturnSpeed = speed;
+        }
+    }
+
+    private boolean isItemRetrievalReturning() {
+        return this.entityData.get(DATA_ITEM_RETRIEVAL_RETURNING);
+    }
+
     public int getRopeExtensionLevel() {
         return this.entityData.get(DATA_ROPE_EXTENSION_LEVEL);
     }
@@ -1772,6 +2271,24 @@ public class GrapplingHook extends AbstractArrow {
         return this.entityData.get(DATA_SWINGING);
     }
 
+    public boolean isEntityHookChoiceWaiting() {
+        return this.entityData.get(DATA_ENTITY_HOOK_CHOICE_WAITING);
+    }
+
+    public static GrapplingHook findActiveEntityChoiceHook(Entity owner) {
+        if (owner == null || owner.level() == null) {
+            return null;
+        }
+
+        return owner.level().getEntitiesOfClass(
+                        GrapplingHook.class,
+                        owner.getBoundingBox().inflate(32.0D),
+                        hook -> hook.isEntityHookChoiceWaiting() && hook.getOwner() == owner)
+                .stream()
+                .findFirst()
+                .orElse(null);
+    }
+
     public static GrapplingHook findActiveSwingHook(Entity owner) {
         if (owner == null || owner.level() == null) {
             return null;
@@ -1812,7 +2329,8 @@ public class GrapplingHook extends AbstractArrow {
     public enum UseMode {
         NORMAL,
         PHANTOM_PENDING,
-        PHANTOM_SWING;
+        PHANTOM_SWING,
+        ITEM_RETRIEVAL;
 
         private static UseMode fromId(int id) {
             UseMode[] values = values();

@@ -29,6 +29,7 @@ import net.minecraftforge.network.PacketDistributor;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.entity.ModEntities;
+import org.com.epicawaken_grappling_hook.enchantment.ItemRetrievalEnchantment;
 import org.com.epicawaken_grappling_hook.item.ModItems;
 import org.com.epicawaken_grappling_hook.network.ModNetwork;
 import org.com.epicawaken_grappling_hook.network.UseGrapplingHookPacket;
@@ -120,11 +121,15 @@ public class ClientEvents {
 
     @Mod.EventBusSubscriber(modid = Epicawaken_grappling_hook.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
     public static class ForgeBusEvents {
+        private static final int ITEM_RETRIEVAL_DOUBLE_CLICK_WINDOW_TICKS = 6;
         private static boolean previewYawLocked;
         private static float lockedPreviewYaw;
         private static boolean grapplingHookKeyDown;
         private static int grapplingHookSequence;
         private static int activeGrapplingHookSequence;
+        private static long lastGrapplingHookReleaseGameTime = Long.MIN_VALUE;
+        private static int lastReleasedGrapplingHookSequence = -1;
+        private static boolean currentPressRequestsSecondaryAction;
 
         @SubscribeEvent
         public static void onClientTick(TickEvent.ClientTickEvent event) {
@@ -136,23 +141,53 @@ public class ClientEvents {
             Minecraft minecraft = Minecraft.getInstance();
             boolean keyDown = minecraft.player != null && minecraft.level != null && USE_GRAPPLING_HOOK.isDown();
             if (keyDown && !grapplingHookKeyDown) {
-                activeGrapplingHookSequence = ++grapplingHookSequence;
+                AimRotation aimRotation = resolveCameraAim(minecraft);
+                facePlayerTowardAim(minecraft.player, aimRotation);
                 GrapplingHookParcoolBlocker.block(net.minecraft.client.Minecraft.getInstance().player, 8);
                 ClientGrapplingHookSprintRestore.recordUseAttempt();
                 ClientGrapplingHookFovEffect.recordUseAttempt();
-                ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
-                        new UseGrapplingHookPacket(
-                                UseGrapplingHookPacket.Action.PRESS,
-                                activeGrapplingHookSequence,
-                                minecraft.player.getYRot(),
-                                minecraft.player.getXRot()));
+                int entityChoiceSequence = ClientEntityHookChoiceTracker.consumeActiveSequence();
+                currentPressRequestsSecondaryAction = entityChoiceSequence >= 0;
+                if (entityChoiceSequence >= 0) {
+                    activeGrapplingHookSequence = entityChoiceSequence;
+                    lastReleasedGrapplingHookSequence = -1;
+                    ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
+                            new UseGrapplingHookPacket(
+                                    UseGrapplingHookPacket.Action.ENTITY_PULL_TARGET,
+                                    activeGrapplingHookSequence,
+                                    aimRotation.yaw(),
+                                    aimRotation.pitch()));
+                } else if (isItemRetrievalDoubleClick(minecraft)) {
+                    currentPressRequestsSecondaryAction = true;
+                    lastReleasedGrapplingHookSequence = -1;
+                    ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
+                            new UseGrapplingHookPacket(
+                                    UseGrapplingHookPacket.Action.ITEM_RETRIEVAL,
+                                    activeGrapplingHookSequence,
+                                    aimRotation.yaw(),
+                                    aimRotation.pitch()));
+                } else {
+                    activeGrapplingHookSequence = ++grapplingHookSequence;
+                    ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
+                            new UseGrapplingHookPacket(
+                                    UseGrapplingHookPacket.Action.PRESS,
+                                    activeGrapplingHookSequence,
+                                    aimRotation.yaw(),
+                                    aimRotation.pitch()));
+                }
             } else if (!keyDown && grapplingHookKeyDown) {
+                AimRotation aimRotation = resolveCameraAim(minecraft);
                 ModNetwork.CHANNEL.send(PacketDistributor.SERVER.noArg(),
                         new UseGrapplingHookPacket(
                                 UseGrapplingHookPacket.Action.RELEASE,
                                 activeGrapplingHookSequence,
-                                minecraft.player.getYRot(),
-                                minecraft.player.getXRot()));
+                                aimRotation.yaw(),
+                                aimRotation.pitch()));
+                if (!currentPressRequestsSecondaryAction && minecraft.level != null) {
+                    lastGrapplingHookReleaseGameTime = minecraft.level.getGameTime();
+                    lastReleasedGrapplingHookSequence = activeGrapplingHookSequence;
+                }
+                currentPressRequestsSecondaryAction = false;
             }
             grapplingHookKeyDown = keyDown;
             if (ClientGrapplingHookSprintRestore.hasWork()) {
@@ -169,6 +204,47 @@ public class ClientEvents {
                     ClientGrapplingHookDebugLogger.tick();
                 }
             }
+        }
+
+        private static boolean isItemRetrievalDoubleClick(Minecraft minecraft) {
+            if (minecraft.player == null
+                    || minecraft.level == null
+                    || lastReleasedGrapplingHookSequence != activeGrapplingHookSequence
+                    || lastReleasedGrapplingHookSequence < 0) {
+                return false;
+            }
+
+            long elapsedTicks = minecraft.level.getGameTime() - lastGrapplingHookReleaseGameTime;
+            if (elapsedTicks < 0L || elapsedTicks > ITEM_RETRIEVAL_DOUBLE_CLICK_WINDOW_TICKS) {
+                return false;
+            }
+
+            return GrapplingHookEquipmentLookup.findEquippedStack(minecraft.player)
+                    .map(ItemRetrievalEnchantment::getLevel)
+                    .orElse(0) > 0;
+        }
+
+        private static AimRotation resolveCameraAim(Minecraft minecraft) {
+            float cameraYaw = minecraft.gameRenderer.getMainCamera().getYRot();
+            float cameraPitch = minecraft.gameRenderer.getMainCamera().getXRot();
+            if (Float.isFinite(cameraYaw) && Float.isFinite(cameraPitch)) {
+                return new AimRotation(Mth.wrapDegrees(cameraYaw), Mth.clamp(cameraPitch, -90.0F, 90.0F));
+            }
+            return new AimRotation(minecraft.player.getYRot(), minecraft.player.getXRot());
+        }
+
+        private static void facePlayerTowardAim(Player player, AimRotation aimRotation) {
+            player.setYRot(aimRotation.yaw());
+            player.setXRot(aimRotation.pitch());
+            player.setYHeadRot(aimRotation.yaw());
+            player.yRotO = aimRotation.yaw();
+            player.xRotO = aimRotation.pitch();
+            player.yHeadRotO = aimRotation.yaw();
+            player.yBodyRot = aimRotation.yaw();
+            player.yBodyRotO = aimRotation.yaw();
+        }
+
+        private record AimRotation(float yaw, float pitch) {
         }
 
         @SubscribeEvent

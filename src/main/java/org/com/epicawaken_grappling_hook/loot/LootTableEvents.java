@@ -19,6 +19,7 @@ import org.com.epicawaken_grappling_hook.enchantment.ModEnchantments;
 @Mod.EventBusSubscriber(modid = Epicawaken_grappling_hook.MODID)
 public final class LootTableEvents {
     private static final float ROPE_RECOVERY_BOOK_CHANCE = 0.1F;
+    private static final float GRAPPLING_SHIELD_DISARM_BOOK_CHANCE = 0.05F;
     private static final Set<ResourceLocation> ENCHANTED_BOOK_LOOT_TABLES = Set.of(
             chest("abandoned_mineshaft"),
             chest("ancient_city"),
@@ -49,20 +50,31 @@ public final class LootTableEvents {
             return;
         }
 
-        LootPool.Builder pool = LootPool.lootPool()
-                .setRolls(ConstantValue.exactly(1.0F))
-                .when(LootItemRandomChanceCondition.randomChance(ROPE_RECOVERY_BOOK_CHANCE));
-        for (int level = 1; level <= ModEnchantments.ROPE_RECOVERY.get().getMaxLevel(); level++) {
-            pool.add(LootItem.lootTableItem(Items.ENCHANTED_BOOK)
-                    .apply(SetNbtFunction.setTag(createStoredEnchantmentTag(level)))
-                    .setWeight(1));
-        }
-        event.getTable().addPool(pool.build());
+        event.getTable().addPool(createEnchantedBookPool(
+                ROPE_RECOVERY_BOOK_CHANCE,
+                ModEnchantments.ROPE_RECOVERY.getId(),
+                ModEnchantments.ROPE_RECOVERY.get().getMaxLevel()));
+        event.getTable().addPool(createEnchantedBookPool(
+                GRAPPLING_SHIELD_DISARM_BOOK_CHANCE,
+                ModEnchantments.GRAPPLING_SHIELD_DISARM.getId(),
+                1));
     }
 
-    private static CompoundTag createStoredEnchantmentTag(int level) {
+    private static LootPool createEnchantedBookPool(float chance, ResourceLocation enchantmentId, int maxLevel) {
+        LootPool.Builder pool = LootPool.lootPool()
+                .setRolls(ConstantValue.exactly(1.0F))
+                .when(LootItemRandomChanceCondition.randomChance(chance));
+        for (int level = 1; level <= maxLevel; level++) {
+            pool.add(LootItem.lootTableItem(Items.ENCHANTED_BOOK)
+                    .apply(SetNbtFunction.setTag(createStoredEnchantmentTag(enchantmentId, level)))
+                    .setWeight(1));
+        }
+        return pool.build();
+    }
+
+    private static CompoundTag createStoredEnchantmentTag(ResourceLocation enchantmentId, int level) {
         CompoundTag enchantment = new CompoundTag();
-        enchantment.putString("id", ModEnchantments.ROPE_RECOVERY.getId().toString());
+        enchantment.putString("id", enchantmentId.toString());
         enchantment.putShort("lvl", (short) level);
 
         ListTag enchantments = new ListTag();

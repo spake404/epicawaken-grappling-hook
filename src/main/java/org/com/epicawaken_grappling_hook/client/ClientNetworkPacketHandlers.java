@@ -2,6 +2,7 @@ package org.com.epicawaken_grappling_hook.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.com.epicawaken_grappling_hook.Config;
@@ -25,6 +26,20 @@ public final class ClientNetworkPacketHandlers {
         Entity entity = Minecraft.getInstance().level.getEntity(entityId);
         GrapplingHookMissedTracker.clearMissed(entity);
         GrapplingHookParcoolBlocker.block(entity, Config.getHookUseBlockDurationTicks());
+    }
+
+    public static void handleEntityHookChoice(int sequenceId, int windowTicks) {
+        ClientEntityHookChoiceTracker.open(sequenceId, windowTicks);
+    }
+
+    public static void handlePullVelocity(int entityId, Vec3 velocity) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null || minecraft.player.getId() != entityId) {
+            return;
+        }
+
+        minecraft.player.setDeltaMovement(velocity);
+        minecraft.player.hurtMarked = true;
     }
 
     public static void handleArrival(int entityId) {

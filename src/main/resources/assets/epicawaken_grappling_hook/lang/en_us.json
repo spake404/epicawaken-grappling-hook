@@ -4,6 +4,8 @@
   "item.epicawaken_grappling_hook.rope": "Rope",
   "enchantment.epicawaken_grappling_hook.rope_extension": "Rope Extension",
   "enchantment.epicawaken_grappling_hook.rope_recovery": "Rope Recovery",
+  "enchantment.epicawaken_grappling_hook.item_retrieval": "Item Retrieval",
+  "enchantment.epicawaken_grappling_hook.grappling_shield_disarm": "Grappling Shield Disarm",
   "tooltip.epicawaken_grappling_hook.usage": "Functions:",
   "tooltip.epicawaken_grappling_hook.grappling_hook.ground": "• Ground: Pulls the player to the target and starts a slide on arrival.",
   "tooltip.epicawaken_grappling_hook.grappling_hook.wall": "• Wall: Pulls the player toward the target.",

@@ -179,6 +179,10 @@ dependencies {
     implementation fg.deobf("curse.maven:epicfightcurioscompat-1389133:7866027")
     implementation fg.deobf("curse.maven:free-cam-557076:4643128")
     implementation fg.deobf("blank:epic_parcool_momentum:4.0.0")
+    implementation fg.deobf("curse.maven:shoulder-surfing-reloaded-243190:8151315")
+    implementation fg.deobf("curse.maven:shoulder-surfing-reloaded-camera-fixes-additions-1531224:8219152")
+    implementation fg.deobf("curse.maven:epic-fight-x-better-lock-on-better-third-person-qol-fixes-1511653:8219164")
+    implementation fg.deobf("curse.maven:better-lock-on-1339577:8332801")
 
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html

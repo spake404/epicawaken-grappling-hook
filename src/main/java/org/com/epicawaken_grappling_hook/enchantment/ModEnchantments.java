@@ -16,6 +16,12 @@ public final class ModEnchantments {
     public static final RegistryObject<Enchantment> ROPE_RECOVERY =
             ENCHANTMENTS.register("rope_recovery", RopeRecoveryEnchantment::new);
 
+    public static final RegistryObject<Enchantment> ITEM_RETRIEVAL =
+            ENCHANTMENTS.register("item_retrieval", ItemRetrievalEnchantment::new);
+
+    public static final RegistryObject<Enchantment> GRAPPLING_SHIELD_DISARM =
+            ENCHANTMENTS.register("grappling_shield_disarm", GrapplingShieldDisarmEnchantment::new);
+
     private ModEnchantments() {
     }
 }

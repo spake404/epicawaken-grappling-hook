@@ -24,6 +24,14 @@ final class GrapplingHookEquipmentLookup {
         return Optional.empty();
     }
 
+    static Optional<ItemStack> findEquippedStack(Player player) {
+        ItemStack offhandStack = player.getOffhandItem();
+        if (isGrapplingHookStack(offhandStack)) {
+            return Optional.of(offhandStack);
+        }
+        return GrapplingHookCurioLookup.findEquipped(player);
+    }
+
     static boolean hasVisibleCurio(Player player) {
         return GrapplingHookCurioLookup.findVisible(player).isPresent();
     }

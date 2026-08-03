@@ -218,6 +218,26 @@ public class ModHookAnimations {
     private static class HookPullActionAnimation extends ActionAnimation {
         private HookPullActionAnimation(float transitionTime, AnimationManager.AnimationAccessor<? extends ActionAnimation> accessor, AssetAccessor<? extends Armature> armature) {
             super(transitionTime, accessor, armature);
+            this.addProperty(
+                    AnimationProperty.StaticAnimationProperty.ELAPSED_TIME_MODIFIER,
+                    HookPullActionAnimation::holdEntityChoiceFrame);
+        }
+
+        private static Pair<Float, Float> holdEntityChoiceFrame(
+                DynamicAnimation animation,
+                LivingEntityPatch<?> entityPatch,
+                float playbackSpeed,
+                float previousElapsedTime,
+                float elapsedTime) {
+            if (animation.isLinkAnimation()
+                    || GrapplingHook.findActiveEntityChoiceHook(entityPatch.getOriginal()) == null) {
+                return Pair.of(previousElapsedTime, elapsedTime);
+            }
+
+            float holdTime = Config.getHookLockAnimationTimeSeconds();
+            return Pair.of(
+                    Math.min(previousElapsedTime, holdTime),
+                    Math.min(elapsedTime, holdTime));
         }
 
         @Override

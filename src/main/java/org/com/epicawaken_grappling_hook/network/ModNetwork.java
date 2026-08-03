@@ -6,7 +6,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 
 public class ModNetwork {
-    private static final String PROTOCOL_VERSION = "3";
+    private static final String PROTOCOL_VERSION = "6";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(Epicawaken_grappling_hook.MODID, "main"),
@@ -26,6 +26,16 @@ public class ModNetwork {
                 .encoder(SyncConfiguredUsePacket::encode)
                 .decoder(SyncConfiguredUsePacket::decode)
                 .consumerMainThread(SyncConfiguredUsePacket::handle)
+                .add();
+        CHANNEL.messageBuilder(OpenEntityHookChoicePacket.class, packetId++)
+                .encoder(OpenEntityHookChoicePacket::encode)
+                .decoder(OpenEntityHookChoicePacket::decode)
+                .consumerMainThread(OpenEntityHookChoicePacket::handle)
+                .add();
+        CHANNEL.messageBuilder(SyncGrapplingPullVelocityPacket.class, packetId++)
+                .encoder(SyncGrapplingPullVelocityPacket::encode)
+                .decoder(SyncGrapplingPullVelocityPacket::decode)
+                .consumerMainThread(SyncGrapplingPullVelocityPacket::handle)
                 .add();
         CHANNEL.messageBuilder(SyncGrapplingHookArrivalPacket.class, packetId++)
                 .encoder(SyncGrapplingHookArrivalPacket::encode)

@@ -4,6 +4,8 @@
   "item.epicawaken_grappling_hook.rope": "绳子",
   "enchantment.epicawaken_grappling_hook.rope_extension": "绳索延展",
   "enchantment.epicawaken_grappling_hook.rope_recovery": "绳索回收",
+  "enchantment.epicawaken_grappling_hook.item_retrieval": "物品抓取",
+  "enchantment.epicawaken_grappling_hook.grappling_shield_disarm": "钩锁夺盾",
   "tooltip.epicawaken_grappling_hook.usage": "功能说明：",
   "tooltip.epicawaken_grappling_hook.grappling_hook.ground": "• 钩向地面：拉向目标地点，并在抵达后进行滑铲。",
   "tooltip.epicawaken_grappling_hook.grappling_hook.wall": "• 钩向墙壁：将玩家拉向目标地点。",

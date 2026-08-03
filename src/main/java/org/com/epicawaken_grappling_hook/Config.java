@@ -458,6 +458,10 @@ public class Config {
         return Math.max(1, (int) Math.ceil(BASE_HOOK_LOCK_DELAY_TICKS / hookPullAnimationSpeed));
     }
 
+    public static float getHookLockAnimationTimeSeconds() {
+        return BASE_HOOK_LOCK_DELAY_TICKS / 20.0F;
+    }
+
     public static double getProjectileSpeed() {
         return getProjectileSpeed(0.0D);
     }

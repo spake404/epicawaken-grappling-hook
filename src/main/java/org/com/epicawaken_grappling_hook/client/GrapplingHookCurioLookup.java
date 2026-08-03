@@ -42,6 +42,25 @@ final class GrapplingHookCurioLookup {
         return Optional.ofNullable(result[0]);
     }
 
+    static Optional<ItemStack> findEquipped(Player player) {
+        ItemStack[] result = new ItemStack[1];
+        CuriosApi.getCuriosInventory(player).ifPresent(handler -> handler.getCurios().forEach((slotId, stacksHandler) -> {
+            if (result[0] != null) {
+                return;
+            }
+
+            IDynamicStackHandler stackHandler = stacksHandler.getStacks();
+            for (int i = 0; i < stackHandler.getSlots(); i++) {
+                ItemStack stack = stackHandler.getStackInSlot(i);
+                if (GrapplingHookEquipmentLookup.isGrapplingHookStack(stack)) {
+                    result[0] = stack;
+                    return;
+                }
+            }
+        }));
+        return Optional.ofNullable(result[0]);
+    }
+
     record Entry(ItemStack stack, SlotContext slotContext) {
     }
 }

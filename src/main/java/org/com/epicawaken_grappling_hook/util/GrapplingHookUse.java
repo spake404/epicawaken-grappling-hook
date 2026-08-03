@@ -21,6 +21,8 @@ import net.minecraftforge.network.PacketDistributor;
 import org.com.epicawaken_grappling_hook.Config;
 import org.com.epicawaken_grappling_hook.Epicawaken_grappling_hook;
 import org.com.epicawaken_grappling_hook.animation.ModHookAnimations;
+import org.com.epicawaken_grappling_hook.enchantment.GrapplingShieldDisarmEnchantment;
+import org.com.epicawaken_grappling_hook.enchantment.ItemRetrievalEnchantment;
 import org.com.epicawaken_grappling_hook.enchantment.RopeExtensionEnchantment;
 import org.com.epicawaken_grappling_hook.enchantment.RopeRecoveryEnchantment;
 import org.com.epicawaken_grappling_hook.client.ClientGrapplingHookUseTracker;
@@ -38,6 +40,7 @@ import yesman.epicfight.world.capabilities.entitypatch.player.ServerPlayerPatch;
 @Mod.EventBusSubscriber(modid = Epicawaken_grappling_hook.MODID)
 public class GrapplingHookUse {
     private static final int CONFIGURED_USE_TTL_TICKS = 80;
+    private static final int ITEM_RETRIEVAL_DOUBLE_CLICK_WINDOW_TICKS = 6;
     private static final Map<UUID, Long> CONFIGURED_USES = new ConcurrentHashMap<>();
     private static final Map<UUID, GrapplingHookVariant> CONFIGURED_USE_VARIANTS = new ConcurrentHashMap<>();
     private static final Map<UUID, UseSession> USE_SESSIONS = new ConcurrentHashMap<>();
@@ -47,10 +50,11 @@ public class GrapplingHookUse {
             return;
         }
 
-        if (action == UseGrapplingHookPacket.Action.PRESS) {
-            tryUse(player, sequenceId, aimYaw, aimPitch);
-        } else {
-            releaseUse(player, sequenceId);
+        switch (action) {
+            case PRESS -> tryUse(player, sequenceId, aimYaw, aimPitch);
+            case RELEASE -> releaseUse(player, sequenceId);
+            case ITEM_RETRIEVAL -> requestItemRetrieval(player, sequenceId);
+            case ENTITY_PULL_TARGET -> requestEntityPullToOwner(player, sequenceId);
         }
     }
 
@@ -64,6 +68,7 @@ public class GrapplingHookUse {
         }
         GrapplingHookVariant variant = GrapplingHookVariant.fromStack(grapplingHook);
         int ropeExtensionLevel = RopeExtensionEnchantment.getLevel(grapplingHook);
+        int grapplingShieldDisarmLevel = GrapplingShieldDisarmEnchantment.getLevel(grapplingHook);
         if (hasActiveUseSession(player)) {
             return;
         }
@@ -80,11 +85,13 @@ public class GrapplingHookUse {
         GrapplingHookMissedTracker.clearMissed(player);
         float validatedAimYaw = Float.isFinite(aimYaw) ? Mth.wrapDegrees(aimYaw) : player.getYRot();
         float validatedAimPitch = Float.isFinite(aimPitch) ? Mth.clamp(aimPitch, -90.0F, 90.0F) : player.getXRot();
+        facePlayerTowardAim(player, validatedAimYaw, validatedAimPitch);
         USE_SESSIONS.put(player.getUUID(), new UseSession(
                 sequenceId,
                 player.serverLevel().getGameTime(),
                 variant,
                 ropeExtensionLevel,
+                grapplingShieldDisarmLevel,
                 validatedAimYaw,
                 validatedAimPitch,
                 !player.onGround()));
@@ -98,6 +105,17 @@ public class GrapplingHookUse {
         damageGrapplingHook(player, grapplingHook);
 
         addCooldown(player, variant);
+    }
+
+    private static void facePlayerTowardAim(ServerPlayer player, float aimYaw, float aimPitch) {
+        player.setYRot(aimYaw);
+        player.setXRot(aimPitch);
+        player.setYHeadRot(aimYaw);
+        player.yRotO = aimYaw;
+        player.xRotO = aimPitch;
+        player.yHeadRotO = aimYaw;
+        player.yBodyRot = aimYaw;
+        player.yBodyRotO = aimYaw;
     }
 
     private static void releaseUse(ServerPlayer player, int sequenceId) {
@@ -117,6 +135,53 @@ public class GrapplingHookUse {
                     session.swingAllowedAtPress,
                     player.onGround(),
                     session.hookEntityId);
+        }
+    }
+
+    private static void requestItemRetrieval(ServerPlayer player, int sequenceId) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null
+                || session.sequenceId != sequenceId
+                || session.keyDown
+                || session.itemRetrievalRequested) {
+            return;
+        }
+
+        long currentGameTime = player.serverLevel().getGameTime();
+        long heldTicks = Math.max(0L, session.releaseGameTime - session.pressGameTime);
+        long releaseAge = currentGameTime - session.releaseGameTime;
+        if (heldTicks >= Config.phantomSwingHoldThresholdTicks
+                || releaseAge < 0L
+                || releaseAge > ITEM_RETRIEVAL_DOUBLE_CLICK_WINDOW_TICKS) {
+            return;
+        }
+
+        ItemStack grapplingHook = findEquippedGrapplingHook(player);
+        if (ItemRetrievalEnchantment.getLevel(grapplingHook) <= 0) {
+            return;
+        }
+
+        if (session.hookEntityId >= 0) {
+            Entity entity = player.serverLevel().getEntity(session.hookEntityId);
+            if (!(entity instanceof GrapplingHook hook)
+                    || hook.getUseSequenceId() != sequenceId
+                    || !hook.enableItemRetrieval()) {
+                return;
+            }
+        }
+
+        session.itemRetrievalRequested = true;
+    }
+
+    private static void requestEntityPullToOwner(ServerPlayer player, int sequenceId) {
+        UseSession session = USE_SESSIONS.get(player.getUUID());
+        if (session == null || session.sequenceId != sequenceId || session.keyDown || session.hookEntityId < 0) {
+            return;
+        }
+
+        Entity entity = player.serverLevel().getEntity(session.hookEntityId);
+        if (entity instanceof GrapplingHook hook && hook.getUseSequenceId() == sequenceId) {
+            hook.requestEntityPullToOwner();
         }
     }
 
@@ -159,6 +224,7 @@ public class GrapplingHookUse {
                     (float) projectileSpeed,
                     (float) Config.projectileInaccuracy);
         }
+        hook.setRetrievalReturnSpeed(hook.getDeltaMovement().length());
         if (Config.debugLogging) {
             Epicawaken_grappling_hook.LOGGER.info(
                     "[GrapplingHookAimDebug][SERVER] owner={} sequence={} packetYaw={} packetPitch={} serverYaw={} serverPitch={} velocity={}",
@@ -181,6 +247,10 @@ public class GrapplingHookUse {
 
         hook.setVariant(session.variant);
         hook.configureUse(session.sequenceId, session.variant.isPhantom(), session.ropeExtensionLevel);
+        hook.setGrapplingShieldDisarmEnabled(session.grapplingShieldDisarmLevel > 0);
+        if (session.itemRetrievalRequested) {
+            hook.enableItemRetrieval();
+        }
     }
 
     public static void registerSpawnedHook(ServerPlayer player, GrapplingHook hook) {
@@ -197,6 +267,10 @@ public class GrapplingHookUse {
     public static HoldDecision getHoldDecision(ServerPlayer player, int sequenceId) {
         UseSession session = USE_SESSIONS.get(player.getUUID());
         if (session == null || session.sequenceId != sequenceId || !session.variant.isPhantom()) {
+            return HoldDecision.NORMAL;
+        }
+
+        if (session.itemRetrievalRequested) {
             return HoldDecision.NORMAL;
         }
 
@@ -376,18 +450,21 @@ public class GrapplingHookUse {
         private final long pressGameTime;
         private final GrapplingHookVariant variant;
         private final int ropeExtensionLevel;
+        private final int grapplingShieldDisarmLevel;
         private final float aimYaw;
         private final float aimPitch;
         private final boolean swingAllowedAtPress;
         private boolean keyDown = true;
         private long releaseGameTime;
         private int hookEntityId = -1;
+        private boolean itemRetrievalRequested;
 
         private UseSession(
                 int sequenceId,
                 long pressGameTime,
                 GrapplingHookVariant variant,
                 int ropeExtensionLevel,
+                int grapplingShieldDisarmLevel,
                 float aimYaw,
                 float aimPitch,
                 boolean swingAllowedAtPress) {
@@ -396,6 +473,7 @@ public class GrapplingHookUse {
             this.releaseGameTime = pressGameTime;
             this.variant = variant;
             this.ropeExtensionLevel = ropeExtensionLevel;
+            this.grapplingShieldDisarmLevel = grapplingShieldDisarmLevel;
             this.aimYaw = aimYaw;
             this.aimPitch = aimPitch;
             this.swingAllowedAtPress = swingAllowedAtPress;
